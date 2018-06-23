@@ -9,6 +9,7 @@ $ItemsDirPath = Join-Path $PSScriptRoot "items"
 $BungieNetPlatform = "https://www.bungie.net"
 $GearDefinitionUrl = "$BungieNetPlatform/common/destiny2_content/geometry/gear"
 $TexturesUrl = "$BungieNetPlatform/common/destiny2_content/geometry/platform/mobile/textures"
+$GeometryUrl = "$BungieNetPlatform/common/destiny2_content/geometry/platform/mobile/geometry"
 
 Function Get-ItemDefinition {
     Param (
@@ -136,6 +137,22 @@ Function Get-Textures {
     return $tgxm.Files
 }
 
+Function Get-Geometry {
+    Param (
+        [Parameter(Mandatory = $true)] [string] $Filename
+    )
+
+    # download TGXM
+    $url = "$GeometryUrl/$Filename"
+    $response = Invoke-WebRequest -Uri $url
+    if ($response.StatusCode -ne 200) {
+        throw "Failed to download TGXM from '$url'"
+    }
+    
+    # extract geometry
+    return (Expand-TGXM $response.Content)
+}
+
 # verify DBs are accessible
 if (!(Test-Path $WorldDBPath)) {
     throw "World DB not found at $WorldDBPath"
@@ -150,8 +167,10 @@ Import-Module PSSQLite
 # build folder structure
 $itemDir = Join-Path $ItemsDirPath $ItemName
 $texturesDir = Join-Path $itemDir "textures"
+$geometryDir = Join-Path $itemDir "geometry"
 New-Item -ItemType Directory -Path $itemDir -Force | Out-Null
 New-Item -ItemType Directory -Path $texturesDir -Force | Out-Null
+New-Item -ItemType Directory -Path $geometryDir -Force | Out-Null
 
 # get item definition
 Write-Host "Retrieving item definition..."
@@ -173,13 +192,32 @@ $gearDefPath = Join-Path $itemDir "gear.json"
 $gear | Out-File -FilePath $gearDefPath -Force
 
 # get textures
-Write-Host "Downloading texture sets..."
-$textureSets = @($assetObj.content[0].textures)
-for ($i = 0; $i -lt $textureSets.Count; $i++) {
-    $textureSetName = $textureSets[$i]
-    foreach ($file in (Get-Textures $textureSetName)) {
-        $texturePath = Join-Path $texturesDir "$($file.Filename).png"
-        $file.Data | Set-Content $texturePath -Encoding Byte
+if ($assetObj.content[0].textures) {
+    Write-Host "Downloading texture sets..."
+    $textureSets = @($assetObj.content[0].textures)
+    for ($i = 0; $i -lt $textureSets.Count; $i++) {
+        $textureSetName = $textureSets[$i]
+        foreach ($file in (Get-Textures $textureSetName)) {
+            $texturePath = Join-Path $texturesDir "$($file.Filename).png"
+            $file.Data | Set-Content $texturePath -Encoding Byte
+        }
+        Write-Host "Downloaded $($i + 1)/$($textureSets.Count) texture sets."
     }
-    Write-Host "Downloaded $($i + 1)/$($textureSets.Count) texture sets."
+}
+
+# get geometry
+if ($assetObj.content[0].geometry) {
+    Write-Host "Downloading geometry sets..."
+    $geometrySets = @($assetObj.content[0].geometry)
+    for ($i = 0; $i -lt $geometrySets.Count; $i++) {
+        $geometrySetName = $geometrySets[$i]
+        $tgxm = Get-Geometry $geometrySetName
+        $geomSetDir = Join-Path $geometryDir $tgxm.Identifier
+        New-Item -ItemType Directory -Path $geomSetDir -Force | Out-Null
+        foreach ($file in $tgxm.Files) {
+            $filePath = Join-Path $geomSetDir $file.Filename
+            $file.Data | Set-Content $filePath -Encoding Byte
+        }
+        Write-Host "Downloaded $($i + 1)/$($geometrySets.Count) geometry sets."
+    }
 }
