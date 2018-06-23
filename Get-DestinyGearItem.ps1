@@ -8,6 +8,7 @@ $ItemsDirPath = Join-Path $PSScriptRoot "items"
 
 $BungieNetPlatform = "https://www.bungie.net"
 $GearDefinitionUrl = "$BungieNetPlatform/common/destiny2_content/geometry/gear"
+$TexturesUrl = "$BungieNetPlatform/common/destiny2_content/geometry/platform/mobile/textures"
 
 Function Get-ItemDefinition {
     Param (
@@ -15,11 +16,8 @@ Function Get-ItemDefinition {
     )
 
     # query world DB
-    $filter = "`"name`":`"$ItemName`""
-    $query = "
-        SELECT * FROM DestinyInventoryItemDefinition
-            WHERE json like '%$filter%'
-    "
+    $nameFilter = "`"name`":`"$($ItemName.Replace("'", "''"))`""
+    $query = "SELECT * FROM DestinyInventoryItemDefinition WHERE json like '%$nameFilter%'"
     $results = Invoke-SqliteQuery -DataSource $WorldDBPath -Query $query
 
     # verify exactly one item was found
@@ -44,10 +42,7 @@ Function Get-AssetDefinition {
     )
 
     # query assets DB
-    $query = "
-        SELECT json FROM DestinyGearAssetsDefinition
-            WHERE id = '$Id'
-    "
+    $query = "SELECT json FROM DestinyGearAssetsDefinition WHERE id = '$Id'"
     $results = Invoke-SqliteQuery -DataSource $AssetDBPath -Query $query
 
     # verify exactly one item was found
@@ -74,6 +69,73 @@ Function Get-GearDefinition {
     return $response.Content
 }
 
+Function Expand-TGXM {
+    Param (
+        [Parameter(Mandatory = $true)] [byte[]] $Data
+    )
+    
+    # verify this is a TGXM file
+    $format = [System.Text.Encoding]::ASCII.GetString($Data[0..3])
+    if ($format -ne 'TGXM') {
+        throw "File is not a valid TGXM file"
+    }
+
+    # identify file version and file count
+    $version = [BitConverter]::ToInt32($Data[4..7], 0)
+    $fileCount = [BitConverter]::ToInt32($Data[12..15], 0)
+    
+    # determine version-specific properties
+    $stringLength = 128
+    $tgxmHeaderLength = 16
+    $identifier = ""
+    if ($version -eq 2) {
+        $stringLength = 256
+        $tgxmHeaderLength = 16 + $stringLength
+        
+        $identifier = [System.Text.Encoding]::ASCII.GetString($Data[16..(15 + $stringLength)])
+    }
+    
+    # read files
+    $files = New-Object System.Collections.Generic.List[System.Object]
+    $fileHeaderLength = $stringLength + 16
+    for ($i = 0; $i -lt $fileCount; $i++) {
+        $filenamePos = $tgxmHeaderLength + ($i * $fileHeaderLength)
+        $offsetPos = $filenamePos + $stringLength
+        $lengthPos = $offsetPos + 8
+        
+        $filename = [System.Text.Encoding]::ASCII.GetString($Data[$filenamePos..($offsetPos - 1)])
+        $offset = [BitConverter]::ToInt32($Data[$offsetPos..($offsetPos + 3)], 0)
+        $length = [BitConverter]::ToInt32($Data[$lengthPos..($lengthPos + 3)], 0)
+        
+        $files.Add(@{
+            Filename = $filename.Trim([char] $null)
+            Data = $Data[$offset..($offset + $length - 1)]
+        })
+    }
+
+    return @{
+        Identifier = $identifier.Trim([char] $null)
+        Files = $files
+    }
+}
+
+Function Get-Textures {
+    Param (
+        [Parameter(Mandatory = $true)] [string] $Filename
+    )
+
+    # download TGXM
+    $url = "$TexturesUrl/$Filename"
+    $response = Invoke-WebRequest -Uri $url
+    if ($response.StatusCode -ne 200) {
+        throw "Failed to download TGXM from '$url'"
+    }
+    
+    # extract textures
+    $tgxm = Expand-TGXM $response.Content
+    return $tgxm.Files
+}
+
 # verify DBs are accessible
 if (!(Test-Path $WorldDBPath)) {
     throw "World DB not found at $WorldDBPath"
@@ -85,24 +147,39 @@ if (!(Test-Path $AssetDBPath)) {
 # import SQLite module
 Import-Module PSSQLite
 
-# get item definition
-$item = Get-ItemDefinition $ItemName
+# build folder structure
 $itemDir = Join-Path $ItemsDirPath $ItemName
-$itemPath = Join-Path $itemDir "item.json"
+$texturesDir = Join-Path $itemDir "textures"
 New-Item -ItemType Directory -Path $itemDir -Force | Out-Null
+New-Item -ItemType Directory -Path $texturesDir -Force | Out-Null
+
+# get item definition
+Write-Host "Retrieving item definition..."
+$item = Get-ItemDefinition $ItemName
+$itemPath = Join-Path $itemDir "item.json"
 $item.Json | Out-File -FilePath $itemPath -Force
 
 # get asset definition
+Write-Host "Retrieving asset definition..."
 $asset = Get-AssetDefinition $item.Id
 $assetPath = Join-Path $itemDir "asset.json"
 $asset | Out-File -FilePath $assetPath -Force
 
 # get gear definitions
+Write-Host "Retrieving gear definition..."
 $assetObj = $asset | ConvertFrom-Json
-$gearDir = Join-Path $itemDir "gear"
-New-Item -ItemType Directory -Path $gearDir -Force | Out-Null
-foreach ($gear in @($assetObj.gear)) {
-    $definition = Get-GearDefinition $gear
-    $defPath = Join-Path $gearDir "$([System.IO.Path]::GetFileNameWithoutExtension($gear)).json"
-    $definition | Out-File -FilePath $defPath -Force
+$gear = Get-GearDefinition $assetObj.gear[0]
+$gearDefPath = Join-Path $itemDir "gear.json"
+$gear | Out-File -FilePath $gearDefPath -Force
+
+# get textures
+Write-Host "Downloading texture sets..."
+$textureSets = @($assetObj.content[0].textures)
+for ($i = 0; $i -lt $textureSets.Count; $i++) {
+    $textureSetName = $textureSets[$i]
+    foreach ($file in (Get-Textures $textureSetName)) {
+        $texturePath = Join-Path $texturesDir "$($file.Filename).png"
+        $file.Data | Set-Content $texturePath -Encoding Byte
+    }
+    Write-Host "Downloaded $($i + 1)/$($textureSets.Count) texture sets."
 }
