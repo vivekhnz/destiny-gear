@@ -19,7 +19,15 @@ verts = [
     (2,0,0),
     (2,1,0),
     (3,0,0),
-    (3,1,0)
+    (3,1,0),
+    (0,0,1),
+    (0,1,1),
+    (1,0,1),
+    (1,1,1),
+    (2,0,1),
+    (2,1,1),
+    (3,0,1),
+    (3,1,1)
 ]
 
 tri_strip = [0,1,2,3,4,5,6,7]
@@ -45,3 +53,9 @@ for i in indices:
 
 bm.to_mesh(mesh)
 bm.free()
+
+bpy.ops.object.mode_set(mode='EDIT')
+for v in bmesh.from_edit_mesh(mesh).verts:
+    v.select = True
+bpy.ops.mesh.delete_loose()
+bpy.ops.object.mode_set(mode='OBJECT')
