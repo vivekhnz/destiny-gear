@@ -1,5 +1,6 @@
 import bpy
 import bmesh
+import struct
 
 
 def convert_to_tri_list(tri_strip):
@@ -17,27 +18,15 @@ def read_some_data(context, filepath):
     data = bytearray(f.read())
     f.close()
 
-    verts = [
-        (0,0,0),
-        (0,1,0),
-        (1,0,0),
-        (1,1,0),
-        (2,0,0),
-        (2,1,0),
-        (3,0,0),
-        (3,1,0),
-        (0,0,1),
-        (0,1,1),
-        (1,0,1),
-        (1,1,1),
-        (2,0,1),
-        (2,1,1),
-        (3,0,1),
-        (3,1,1)
-    ]
-
-    tri_strip = [0,1,2,3,4,5,6,7]
-    indices = convert_to_tri_list(tri_strip)
+    verts = []
+    for i in range(0,len(data), 16):
+        xBytes = data[i:i+4]
+        yBytes = data[i+4:i+8]
+        zBytes = data[i+8:i+12]
+        x = struct.unpack('f', xBytes)
+        y = struct.unpack('f', yBytes)
+        z = struct.unpack('f', zBytes)
+        verts.append((x[0],y[0],z[0]))
 
     mesh = bpy.data.meshes.new("MyMesh")
     obj = bpy.data.objects.new("MyObject", mesh)
@@ -53,9 +42,9 @@ def read_some_data(context, filepath):
         bm.verts.new(v)
 
     bm.verts.ensure_lookup_table()
-    for i in indices:
-        face = (bm.verts[i[0]], bm.verts[i[1]], bm.verts[i[2]])
-        bm.faces.new(face)
+    # for i in indices:
+    #     face = (bm.verts[i[0]], bm.verts[i[1]], bm.verts[i[2]])
+    #     bm.faces.new(face)
 
     bm.to_mesh(mesh)
     bm.free()
@@ -63,7 +52,7 @@ def read_some_data(context, filepath):
     bpy.ops.object.mode_set(mode='EDIT')
     for v in bmesh.from_edit_mesh(mesh).verts:
         v.select = True
-    bpy.ops.mesh.delete_loose()
+    # bpy.ops.mesh.delete_loose()
     bpy.ops.object.mode_set(mode='OBJECT')
 
     print(len(data))
