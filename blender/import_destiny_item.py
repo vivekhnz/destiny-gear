@@ -4,20 +4,21 @@ import struct
 
 
 def convert_to_tri_list(tri_strip):
-    tri_list = [(tri_strip[0], tri_strip[2], tri_strip[1])]
-    for i in range(1, len(tri_strip) - 2):
+    tri_list = []
+    for i in range(0, len(tri_strip) - 2):
+        a = tri_strip[i]
+        b = tri_strip[i+1]
+        c = tri_strip[i+2]
+        if (a == b or a == c or b == c):
+            continue
         if (i % 2 == 0):
-            tri_list.append((tri_strip[i], tri_strip[i+2], tri_strip[i+1]))
+            tri_list.append((a, b, c))
         else:
-            tri_list.append((tri_strip[i], tri_strip[i+1], tri_strip[i+2]))
+            tri_list.append((a, c, b))
     return tri_list
 
 
-def read_some_data(context, filepath):
-    f = open(filepath, 'rb')
-    data = bytearray(f.read())
-    f.close()
-
+def read_vertices(data):
     verts = []
     for i in range(0,len(data), 16):
         xBytes = data[i:i+4]
@@ -27,7 +28,15 @@ def read_some_data(context, filepath):
         y = struct.unpack('f', yBytes)
         z = struct.unpack('f', zBytes)
         verts.append((x[0],y[0],z[0]))
+    return verts
 
+def read_indices(data):
+    indices = []
+    for i in range(0,len(data), 2):
+        indices.append(struct.unpack('H', data[i:i+2])[0])
+    return indices
+
+def create_mesh(verts, indices):
     mesh = bpy.data.meshes.new("MyMesh")
     obj = bpy.data.objects.new("MyObject", mesh)
 
@@ -42,9 +51,9 @@ def read_some_data(context, filepath):
         bm.verts.new(v)
 
     bm.verts.ensure_lookup_table()
-    # for i in indices:
-    #     face = (bm.verts[i[0]], bm.verts[i[1]], bm.verts[i[2]])
-    #     bm.faces.new(face)
+    for i in indices:
+        face = (bm.verts[i[0]], bm.verts[i[1]], bm.verts[i[2]])
+        bm.faces.new(face)
 
     bm.to_mesh(mesh)
     bm.free()
@@ -55,7 +64,19 @@ def read_some_data(context, filepath):
     # bpy.ops.mesh.delete_loose()
     bpy.ops.object.mode_set(mode='OBJECT')
 
-    print(len(data))
+def read_meshes(context, filepath):
+    f = open(filepath, 'rb')
+    data = bytearray(f.read())
+    f.close()
+
+    vertex_length = 14736
+    indices_length = 5696
+
+    verts = read_vertices(data[0:vertex_length])
+    all_indices = data[vertex_length:vertex_length+indices_length]
+    indices = convert_to_tri_list(read_indices(all_indices[2:686]))
+
+    create_mesh(verts, indices)
 
     return {'FINISHED'}
 
@@ -73,16 +94,16 @@ class ImportDestinyItem(Operator, ImportHelper):
     bl_label = "Import Destiny Item"
 
     # ImportHelper mixin class uses this
-    filename_ext = ".tgx"
+    filename_ext = ".meshes"
 
     filter_glob = StringProperty(
-            default="*.tgx",
+            default="*.meshes",
             options={'HIDDEN'},
             maxlen=255,  # Max internal buffer length, longer would be clamped.
             )
 
     def execute(self, context):
-        return read_some_data(context, self.filepath)
+        return read_meshes(context, self.filepath)
 
 
 # Only needed if you want to add into a dynamic menu
