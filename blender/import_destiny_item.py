@@ -74,9 +74,18 @@ def read_meshes(context, filepath):
 
     verts = read_vertices(data[0:vertex_length])
     all_indices = data[vertex_length:vertex_length+indices_length]
-    indices = convert_to_tri_list(read_indices(all_indices[2:686]))
-
-    create_mesh(verts, indices)
+    stage_part_indices = [
+        (2,286),
+        (690, 2106),
+        (2110, 4878),
+        (4882, 5030),
+        (5034, 5238),
+        (5242, 5696)
+    ]
+    
+    for part in stage_part_indices:
+        indices = convert_to_tri_list(read_indices(all_indices[part[0]:part[1]]))
+        create_mesh(verts, indices)
 
     return {'FINISHED'}
 
