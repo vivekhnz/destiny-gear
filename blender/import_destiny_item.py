@@ -53,7 +53,11 @@ def create_mesh(verts, indices):
     bm.verts.ensure_lookup_table()
     for i in indices:
         face = (bm.verts[i[0]], bm.verts[i[1]], bm.verts[i[2]])
-        bm.faces.new(face)
+        try:
+            bm.faces.new(face)
+        except ValueError:
+            # face already exists
+            continue
 
     bm.to_mesh(mesh)
     bm.free()
@@ -66,26 +70,28 @@ def create_mesh(verts, indices):
 
 def read_meshes(context, filepath):
     f = open(filepath, 'rb')
-    data = bytearray(f.read())
+    bob_count = struct.unpack('i', bytearray(f.read(4)))[0]
+    for bob in range(bob_count):
+        bit_indices = []
+        bit_count = struct.unpack('i', bytearray(f.read(4)))[0]
+        for bit in range(bit_count):
+            start_index = struct.unpack('i', bytearray(f.read(4)))[0]
+            index_count = struct.unpack('i', bytearray(f.read(4)))[0]
+            bit_indices.append((start_index, index_count))
+        
+        index_buffer_size = struct.unpack('i', bytearray(f.read(4)))[0]
+        index_buffer = bytearray(f.read(index_buffer_size))
+
+        vertex_buffer_size = struct.unpack('i', bytearray(f.read(4)))[0]
+        vertex_buffer = bytearray(f.read(vertex_buffer_size))
+
+        verts = read_vertices(vertex_buffer)
+        tri_strip = read_indices(index_buffer)
+        for bit in bit_indices:
+            indices = convert_to_tri_list(tri_strip[bit[0]:bit[0]+bit[1]])
+            create_mesh(verts, indices)
+
     f.close()
-
-    vertex_length = 14736
-    indices_length = 5696
-
-    verts = read_vertices(data[0:vertex_length])
-    all_indices = data[vertex_length:vertex_length+indices_length]
-    stage_part_indices = [
-        (2,286),
-        (690, 2106),
-        (2110, 4878),
-        (4882, 5030),
-        (5034, 5238),
-        (5242, 5696)
-    ]
-    
-    for part in stage_part_indices:
-        indices = convert_to_tri_list(read_indices(all_indices[part[0]:part[1]]))
-        create_mesh(verts, indices)
 
     return {'FINISHED'}
 
