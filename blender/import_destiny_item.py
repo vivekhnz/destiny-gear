@@ -65,7 +65,7 @@ def create_mesh(verts, indices):
     bpy.ops.object.mode_set(mode='EDIT')
     for v in bmesh.from_edit_mesh(mesh).verts:
         v.select = True
-    # bpy.ops.mesh.delete_loose()
+    bpy.ops.mesh.delete_loose()
     bpy.ops.object.mode_set(mode='OBJECT')
 
 def read_meshes(context, filepath):

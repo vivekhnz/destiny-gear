@@ -21,13 +21,18 @@ $arrangement = [System.BitConverter]::GetBytes($bobCount)
 # iterate through bobs
 foreach ($bob in $metadataObj.render_model.render_meshes) {
 
+    # calculate bits to be used
+    $start = If ($bob.stage_part_offsets.Count > 0) { $bob.stage_part_offsets[0] } Else { 0 }
+    $end = If ($bob.stage_part_offsets.Count > 1) { $bob.stage_part_offsets[1] } Else { $bob.stage_part_list.Count - 1 }
+
     # add bit count to arrangement
-    $bitCount = $bob.stage_part_list.Count
+    $bitCount = $end - $start
     $arrangement += [System.BitConverter]::GetBytes($bitCount)
 
     # iterate through bits
-    foreach ($bit in $bob.stage_part_list) {
+    for ($i = 0; $i -lt $bitCount; $i++) {
         # add bit index data to arrangement
+        $bit = $bob.stage_part_list[$i]
         $startIndex = $bit.start_index
         $indexCount = $bit.index_count
 
