@@ -2,6 +2,23 @@ import bpy
 import bmesh
 import struct
 
+# Vertex Stream Definition Types:
+#
+# "_vertex_format_attribute_float2" = 0
+# "_vertex_format_attribute_float4" = 1
+# "_vertex_format_attribute_short2" = 2
+# "_vertex_format_attribute_short4" = 3
+# "_vertex_format_attribute_ubyte4" = 4
+ 
+# Vertex Stream Definition Semantics:
+#
+# "_tfx_vb_semantic_position" = 0
+# "_tfx_vb_semantic_texcoord" = 1
+# "_tfx_vb_semantic_normal" = 2
+# "_tfx_vb_semantic_tangent" = 3
+# "_tfx_vb_semantic_color" = 4
+# "_tfx_vb_semantic_blendweight" = 5
+# "_tfx_vb_semantic_blendindices" = 6
 
 def convert_to_tri_list(tri_strip):
     tri_list = []
@@ -18,16 +35,29 @@ def convert_to_tri_list(tri_strip):
     return tri_list
 
 
-def read_vertices(data):
+def read_vertices(data, vertex_definition_set):
     verts = []
-    for i in range(0,len(data), 16):
-        xBytes = data[i:i+4]
-        yBytes = data[i+4:i+8]
-        zBytes = data[i+8:i+12]
-        x = struct.unpack('f', xBytes)
-        y = struct.unpack('f', yBytes)
-        z = struct.unpack('f', zBytes)
-        verts.append((x[0],y[0],z[0]))
+    for i in range(0,len(data), vertex_definition_set["stride"]):
+        for definition in vertex_definition_set["definitions"]:
+            if definition["semantic"] == 0:
+                offset = definition["offset"]
+                if definition["type"] == 1:
+                    xBytes = data[i+offset:i+offset+4]
+                    yBytes = data[i+offset+4:i+offset+8]
+                    zBytes = data[i+offset+8:i+offset+12]
+                    x = struct.unpack('f', xBytes)[0]
+                    y = struct.unpack('f', yBytes)[0]
+                    z = struct.unpack('f', zBytes)[0]
+                    verts.append((x, y, z))
+                elif definition["type"] == 3:
+                    xBytes = data[i+offset:i+offset+2]
+                    yBytes = data[i+offset+2:i+offset+4]
+                    zBytes = data[i+offset+4:i+offset+6]
+                    x = struct.unpack('h', xBytes)[0]
+                    y = struct.unpack('h', yBytes)[0]
+                    z = struct.unpack('h', zBytes)[0]
+                    verts.append((x, y, z))
+                    
     return verts
 
 def read_indices(data):
@@ -79,17 +109,44 @@ def read_meshes(context, filepath):
             index_count = struct.unpack('i', bytearray(f.read(4)))[0]
             bit_indices.append((start_index, index_count))
         
+        vertex_definition_sets = []
+        vertex_definition_set_count = struct.unpack('i', bytearray(f.read(4)))[0]
+        for i in range(vertex_definition_set_count):
+            vertex_definition_set = {}
+            vertex_definition_set["stride"] = struct.unpack('i', bytearray(f.read(4)))[0]
+            definition_count = struct.unpack('i', bytearray(f.read(4)))[0]
+            definitions = []
+            for d in range(definition_count):
+                definition = {}
+                definition["type"] = struct.unpack('i', bytearray(f.read(4)))[0]
+                definition["semantic"] = struct.unpack('i', bytearray(f.read(4)))[0]
+                definition["size"] = struct.unpack('i', bytearray(f.read(4)))[0]
+                definition["offset"] = struct.unpack('i', bytearray(f.read(4)))[0]
+                definition["semantic_index"] = struct.unpack('i', bytearray(f.read(4)))[0]
+                definitions.append(definition)
+            vertex_definition_set["definitions"] = definitions
+            vertex_definition_sets.append(vertex_definition_set)
+
         index_buffer_size = struct.unpack('i', bytearray(f.read(4)))[0]
         index_buffer = bytearray(f.read(index_buffer_size))
 
-        vertex_buffer_size = struct.unpack('i', bytearray(f.read(4)))[0]
-        vertex_buffer = bytearray(f.read(vertex_buffer_size))
+        vertex_buffers = []
+        vertex_buffer_count = struct.unpack('i', bytearray(f.read(4)))[0]
+        for i in range(vertex_buffer_count):
+            vertex_buffer_size = struct.unpack('i', bytearray(f.read(4)))[0]
+            vertex_buffer = bytearray(f.read(vertex_buffer_size))
+            vertex_buffers.append(vertex_buffer)
 
-        verts = read_vertices(vertex_buffer)
-        tri_strip = read_indices(index_buffer)
-        for bit in bit_indices:
-            indices = convert_to_tri_list(tri_strip[bit[0]:bit[0]+bit[1]])
-            create_mesh(verts, indices)
+        for i in range(len(vertex_buffers)):
+            vertex_buffer = vertex_buffers[i]
+            vertex_definition_set = vertex_definition_sets[i]
+        
+            verts = read_vertices(vertex_buffer, vertex_definition_set)
+            if len(verts) > 0:
+                tri_strip = read_indices(index_buffer)
+                for bit in bit_indices:
+                    indices = convert_to_tri_list(tri_strip[bit[0]:bit[0]+bit[1]])
+                    create_mesh(verts, indices)
 
     f.close()
 

@@ -16,7 +16,9 @@ $VertexStreamSemantics = @{
     "_tfx_vb_semantic_texcoord" = 1;
     "_tfx_vb_semantic_normal" = 2;
     "_tfx_vb_semantic_tangent" = 3;
-    "_tfx_vb_semantic_color" = 4
+    "_tfx_vb_semantic_color" = 4;
+    "_tfx_vb_semantic_blendweight" = 5;
+    "_tfx_vb_semantic_blendindices" = 6
 }
 
 # verify input files are accessible
@@ -65,7 +67,7 @@ foreach ($bob in $metadataObj.render_model.render_meshes) {
             $size = $element.size
             $offset = $element.offset
             $semanticIndex = $element.semantic_index
-            
+
             $arrangement += [System.BitConverter]::GetBytes($VertexStreamTypes[$type])
             $arrangement += [System.BitConverter]::GetBytes($VertexStreamSemantics[$semantic])
             $arrangement += [System.BitConverter]::GetBytes($size)
