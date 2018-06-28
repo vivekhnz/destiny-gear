@@ -42,28 +42,35 @@ def read_vertices(data, vertex_definition_set):
             if definition["semantic"] == 0:
                 offset = definition["offset"]
                 if definition["type"] == 1:
-                    xBytes = data[i+offset:i+offset+4]
-                    yBytes = data[i+offset+4:i+offset+8]
-                    zBytes = data[i+offset+8:i+offset+12]
-                    x = struct.unpack('f', xBytes)[0]
-                    y = struct.unpack('f', yBytes)[0]
-                    z = struct.unpack('f', zBytes)[0]
+                    x_bytes = data[i+offset:i+offset+4]
+                    y_bytes = data[i+offset+4:i+offset+8]
+                    z_bytes = data[i+offset+8:i+offset+12]
+                    x = struct.unpack('f', x_bytes)[0]
+                    y = struct.unpack('f', y_bytes)[0]
+                    z = struct.unpack('f', z_bytes)[0]
                     verts.append((x, y, z))
                 elif definition["type"] == 3:
-                    xBytes = data[i+offset:i+offset+2]
-                    yBytes = data[i+offset+2:i+offset+4]
-                    zBytes = data[i+offset+4:i+offset+6]
-                    x = struct.unpack('h', xBytes)[0]
-                    y = struct.unpack('h', yBytes)[0]
-                    z = struct.unpack('h', zBytes)[0]
+                    x_bytes = data[i+offset:i+offset+2]
+                    y_bytes = data[i+offset+2:i+offset+4]
+                    z_bytes = data[i+offset+4:i+offset+6]
+                    x = struct.unpack('h', x_bytes)[0]
+                    y = struct.unpack('h', y_bytes)[0]
+                    z = struct.unpack('h', z_bytes)[0]
                     verts.append((x, y, z))
                     
     return verts
 
-def read_indices(data):
+def read_indices(data, is_tri_list):
     indices = []
-    for i in range(0,len(data), 2):
-        indices.append(struct.unpack('H', data[i:i+2])[0])
+    if (is_tri_list):
+        for i in range(0, len(data), 6):
+            a = struct.unpack('H', data[i:i+2])[0]
+            b = struct.unpack('H', data[i+2:i+4])[0]
+            c = struct.unpack('H', data[i+4:i+6])[0]
+            indices.append((a, b, c))
+    else:
+        for i in range(0, len(data), 2):
+            indices.append(struct.unpack('H', data[i:i+2])[0])
     return indices
 
 def create_mesh(verts, indices):
@@ -127,6 +134,7 @@ def read_meshes(context, filepath):
             vertex_definition_set["definitions"] = definitions
             vertex_definition_sets.append(vertex_definition_set)
 
+        index_buffer_type = struct.unpack('i', bytearray(f.read(4)))[0]
         index_buffer_size = struct.unpack('i', bytearray(f.read(4)))[0]
         index_buffer = bytearray(f.read(index_buffer_size))
 
@@ -143,9 +151,13 @@ def read_meshes(context, filepath):
         
             verts = read_vertices(vertex_buffer, vertex_definition_set)
             if len(verts) > 0:
-                tri_strip = read_indices(index_buffer)
+                all_indices = read_indices(index_buffer, (index_buffer_type == 3))
                 for bit in bit_indices:
-                    indices = convert_to_tri_list(tri_strip[bit[0]:bit[0]+bit[1]])
+                    indices = []
+                    if (index_buffer_type == 3):
+                        indices = all_indices[bit[0]:bit[0]+bit[1]]
+                    else:
+                        indices = convert_to_tri_list(all_indices[bit[0]:bit[0]+bit[1]])
                     create_mesh(verts, indices)
 
     f.close()

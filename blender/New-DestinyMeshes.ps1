@@ -42,10 +42,19 @@ foreach ($bob in $metadataObj.render_model.render_meshes) {
     # add bits to arrangement
     $bitCount = $end - $start
     $arrangement += [System.BitConverter]::GetBytes($bitCount)
+    $indexType = 0
     for ($i = 0; $i -lt $bitCount; $i++) {
         $bit = $bob.stage_part_list[$i]
         $startIndex = $bit.start_index
         $indexCount = $bit.index_count
+        if ($i -gt 0) {
+            if ($indexType -ne $bit.primitive_type) {
+                throw "Inconsistent index types in bob"
+            }
+        }
+        else {
+            $indexType = $bit.primitive_type
+        }
 
         $arrangement += [System.BitConverter]::GetBytes($startIndex)
         $arrangement += [System.BitConverter]::GetBytes($indexCount)
@@ -79,6 +88,8 @@ foreach ($bob in $metadataObj.render_model.render_meshes) {
     # add index buffer to arrangement
     $indexBufferName = $bob.index_buffer.file_name
     $indexBufferSize = $bob.index_buffer.byte_size
+    
+    $arrangement += [System.BitConverter]::GetBytes($indexType)
     $arrangement += [System.BitConverter]::GetBytes($indexBufferSize)
     $arrangement += (Get-Content -Path (Join-Path $FolderPath $indexBufferName) -Encoding Byte -ReadCount 512)
     
