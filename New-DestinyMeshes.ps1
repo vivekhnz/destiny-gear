@@ -13,12 +13,12 @@ $VertexStreamTypes = @{
     "_vertex_format_attribute_ubyte4" = 4
 }
 $VertexStreamSemantics = @{
-    "_tfx_vb_semantic_position" = 0
-    "_tfx_vb_semantic_texcoord" = 1
-    "_tfx_vb_semantic_normal" = 2
-    "_tfx_vb_semantic_tangent" = 3
-    "_tfx_vb_semantic_color" = 4
-    "_tfx_vb_semantic_blendweight" = 5
+    "_tfx_vb_semantic_position"     = 0
+    "_tfx_vb_semantic_texcoord"     = 1
+    "_tfx_vb_semantic_normal"       = 2
+    "_tfx_vb_semantic_tangent"      = 3
+    "_tfx_vb_semantic_color"        = 4
+    "_tfx_vb_semantic_blendweight"  = 5
     "_tfx_vb_semantic_blendindices" = 6
 }
 $KnownPrimitiveTypes = @(3, 5)
@@ -42,7 +42,12 @@ function Get-StageParts {
         $parts = $Bob.stage_part_list[$start..$end]
     }
     
-    return $parts | Where-Object { $_.lod_category.name.Contains($LodCategory) }
+    $filtered = $parts | Where-Object { $_.lod_category.name.Contains($LodCategory) }
+    if ($filtered -isnot [Array]) {
+        return @()
+    }
+
+    return $filtered
 }
 
 function Write-IndexBuffer {
@@ -184,7 +189,7 @@ $arrangements = @(
 )
 
 # save meshes file
-$stream  = New-Object System.IO.FileStream($OutputPath, [IO.FileMode]::OpenOrCreate)
+$stream = New-Object System.IO.FileStream($OutputPath, [IO.FileMode]::OpenOrCreate)
 $writer = New-Object System.IO.BinaryWriter($stream)
 
 $Writer.Write($arrangements.Count)
