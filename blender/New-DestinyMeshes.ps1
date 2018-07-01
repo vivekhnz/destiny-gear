@@ -1,24 +1,173 @@
 Param (
     [Parameter(Mandatory = $true)] [string] $FolderPath,
-    [Parameter(Mandatory = $true)] [string] $OutputPath
+    [Parameter(Mandatory = $true)] [string] $OutputPath,
+    [Parameter(Mandatory = $false)] [string] $LodCategory = "0"
 )
 
 $RenderMetadata = Join-Path $FolderPath "render_metadata.js"
 $VertexStreamTypes = @{
-    "_vertex_format_attribute_float2" = 0;
-    "_vertex_format_attribute_float4" = 1;
-    "_vertex_format_attribute_short2" = 2;
-    "_vertex_format_attribute_short4" = 3;
+    "_vertex_format_attribute_float2" = 0
+    "_vertex_format_attribute_float4" = 1
+    "_vertex_format_attribute_short2" = 2
+    "_vertex_format_attribute_short4" = 3
     "_vertex_format_attribute_ubyte4" = 4
 }
 $VertexStreamSemantics = @{
-    "_tfx_vb_semantic_position" = 0;
-    "_tfx_vb_semantic_texcoord" = 1;
-    "_tfx_vb_semantic_normal" = 2;
-    "_tfx_vb_semantic_tangent" = 3;
-    "_tfx_vb_semantic_color" = 4;
-    "_tfx_vb_semantic_blendweight" = 5;
+    "_tfx_vb_semantic_position" = 0
+    "_tfx_vb_semantic_texcoord" = 1
+    "_tfx_vb_semantic_normal" = 2
+    "_tfx_vb_semantic_tangent" = 3
+    "_tfx_vb_semantic_color" = 4
+    "_tfx_vb_semantic_blendweight" = 5
     "_tfx_vb_semantic_blendindices" = 6
+}
+$KnownPrimitiveTypes = @(3, 5)
+
+function Get-StageParts {
+    Param (
+        [Parameter(Mandatory = $true)] $Bob
+    )
+
+    $parts = @()
+    if ($Bob.stage_part_offsets.Count -eq 0) {
+        $parts = $Bob.stage_part_list
+    }
+    elseif ($Bob.stage_part_offsets.Count -eq 1) {
+        $start = $Bob.stage_part_offsets[0]
+        $parts = $Bob.stage_part_list[$start..-1]
+    }
+    else {
+        $start = $Bob.stage_part_offsets[0]
+        $end = $Bob.stage_part_offsets[1]
+        $parts = $Bob.stage_part_list[$start..$end]
+    }
+    
+    return $parts | Where-Object { $_.lod_category.name.Contains($LodCategory) }
+}
+
+function Write-IndexBuffer {
+    Param (
+        [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
+        [Parameter(Mandatory = $true)] $IndexBuffer
+    )
+    
+    $path = Join-Path $FolderPath $IndexBuffer.file_name
+    $data = [System.IO.File]::ReadAllBytes($path)
+    
+    $Writer.Write($IndexBuffer.byte_size / $IndexBuffer.value_byte_size)
+    $Writer.Write($data -as [Byte[]])
+}
+
+function Write-VertexBuffer {
+    Param (
+        [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
+        [Parameter(Mandatory = $true)] $VertexBuffer,
+        [Parameter(Mandatory = $true)] $Elements
+    )
+    
+    $path = Join-Path $FolderPath $VertexBuffer.file_name
+    $data = [System.IO.File]::ReadAllBytes($path)
+    
+    $Writer.Write($Elements.Count)
+    foreach ($element in $Elements) {
+        $type = $VertexStreamTypes[$element.type]
+        if ($type -eq $null) {
+            throw "Unknown stream element type '$($element.type)'."
+        }
+        
+        $semantic = $VertexStreamSemantics[$element.semantic]
+        if ($semantic -eq $null) {
+            throw "Unknown stream element semantic '$($element.semantic)'."
+        }
+
+        $Writer.Write($type)
+        $Writer.Write($semantic)
+        $Writer.Write($element.semantic_index)
+        $Writer.Write($element.normalized)
+    }
+    $Writer.Write($data)
+}
+
+function Write-Bit {
+    Param (
+        [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
+        [Parameter(Mandatory = $true)] $Bit
+    )
+
+    $Writer.Write($Bit.start_index)
+    $Writer.Write($Bit.start_index + $Bit.index_count)
+}
+
+function Write-Bob {
+    Param (
+        [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
+        [Parameter(Mandatory = $true)] $Bob
+    )
+
+    $parts = Get-StageParts $Bob
+    $vbCount = $Bob.vertex_buffers.Count
+    $layoutCount = $Bob.stage_part_vertex_stream_layout_definitions.formats.Count
+    if (($parts.Count -eq 0) -or ($vbCount -eq 0)) {
+        return
+    }
+    if ($vbCount -gt $layoutCount) {
+        throw "Bob contains $vbCount vertex buffers but only $layoutCount stream layouts were defined."
+    }
+
+    # identify whether bob is a triangle strip or a triangle list
+    $primitiveType = $parts[0].primitive_type
+    for ($i = 1; $i -lt $parts.Count; $i++) {
+        if ($parts[$i].primitive_type -ne $primitiveType) {
+            throw "Bob contains inconsistent primitive types."
+        }
+    }
+    if (-not ($KnownPrimitiveTypes.Contains($primitiveType))) {
+        throw "Unknown primitive type '$primitiveType'."
+    }
+
+    # determine vertex count
+    $firstVB = $Bob.vertex_buffers[0]
+    $vertexCount = $firstVB.byte_size / $firstVB.stride_byte_size
+    for ($i = 1; $i -lt $vbCount; $i++) {
+        $vb = $Bob.vertex_buffers[$i]
+        if (($vb.byte_size / $vb.stride_byte_size) -ne $vertexCount) {
+            throw "Vertex buffers contain a different number of vertices."
+        }
+    }
+
+    # write bob header
+    $Writer.Write($primitiveType)
+    $Writer.Write($vertexCount)
+
+    # write index buffer
+    Write-IndexBuffer $Writer $Bob.index_buffer
+    
+    # write vertex buffers
+    $Writer.Write($vbCount)
+    for ($i = 0; $i -lt $vbCount; $i++) {
+        $vb = $Bob.vertex_buffers[$i]
+        $layout = $Bob.stage_part_vertex_stream_layout_definitions.formats[$i].elements
+        Write-VertexBuffer $Writer $vb $layout
+    }
+
+    # write bits
+    $Writer.Write($parts.Count)
+    foreach ($part in $parts) {
+        Write-Bit $Writer $part
+    }
+}
+
+function Write-Arrangement {
+    Param (
+        [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
+        [Parameter(Mandatory = $true)] $Arrangement
+    )
+
+    # write bobs
+    $Writer.Write($Arrangement.render_model.render_meshes.Count)
+    foreach ($bob in $Arrangement.render_model.render_meshes) {
+        Write-Bob $Writer $bob
+    }
 }
 
 # verify input files are accessible
@@ -30,80 +179,18 @@ if (!(Test-Path $RenderMetadata)) {
 $json = Get-Content -Path $RenderMetadata
 $metadataObj = $json | ConvertFrom-Json
 
-# add bobs to arrangement
-$bobCount = $metadataObj.render_model.render_meshes.Count
-$arrangement = [System.BitConverter]::GetBytes($bobCount)
-foreach ($bob in $metadataObj.render_model.render_meshes) {
-
-    # calculate bits to be used
-    $start = If ($bob.stage_part_offsets.Count > 0) { $bob.stage_part_offsets[0] } Else { 0 }
-    $end = If ($bob.stage_part_offsets.Count > 1) { $bob.stage_part_offsets[1] } Else { $bob.stage_part_list.Count - 1 }
-
-    # add bits to arrangement
-    $bitCount = $end - $start
-    $arrangement += [System.BitConverter]::GetBytes($bitCount)
-    $indexType = 0
-    for ($i = 0; $i -lt $bitCount; $i++) {
-        $bit = $bob.stage_part_list[$i]
-        $startIndex = $bit.start_index
-        $indexCount = $bit.index_count
-        if ($i -gt 0) {
-            if ($indexType -ne $bit.primitive_type) {
-                throw "Inconsistent index types in bob"
-            }
-        }
-        else {
-            $indexType = $bit.primitive_type
-        }
-
-        $arrangement += [System.BitConverter]::GetBytes($startIndex)
-        $arrangement += [System.BitConverter]::GetBytes($indexCount)
-    }
-
-    # add vertex stream definitions to arrangement
-    $vertexDefinitions = $bob.stage_part_vertex_stream_layout_definitions[0]
-    $vertexDefinitionFormats = $vertexDefinitions.formats
-    $arrangement += [System.BitConverter]::GetBytes($vertexDefinitionFormats.Count)
-    foreach ($format in $vertexDefinitionFormats) {
-        $stride = $format.stride
-        $arrangement += [System.BitConverter]::GetBytes($stride)
-        $elements = $format.elements
-        $arrangement += [System.BitConverter]::GetBytes($elements.Count)
-
-        foreach ($element in $elements) {
-            $type = $element.type
-            $semantic = $element.semantic
-            $size = $element.size
-            $offset = $element.offset
-            $semanticIndex = $element.semantic_index
-
-            $arrangement += [System.BitConverter]::GetBytes($VertexStreamTypes[$type])
-            $arrangement += [System.BitConverter]::GetBytes($VertexStreamSemantics[$semantic])
-            $arrangement += [System.BitConverter]::GetBytes($size)
-            $arrangement += [System.BitConverter]::GetBytes($offset)
-            $arrangement += [System.BitConverter]::GetBytes($semanticIndex)
-        }
-    }
-
-    # add index buffer to arrangement
-    $indexBufferName = $bob.index_buffer.file_name
-    $indexBufferSize = $bob.index_buffer.byte_size
-    
-    $arrangement += [System.BitConverter]::GetBytes($indexType)
-    $arrangement += [System.BitConverter]::GetBytes($indexBufferSize)
-    $arrangement += (Get-Content -Path (Join-Path $FolderPath $indexBufferName) -Encoding Byte -ReadCount 512)
-    
-    # add vertex buffers to arrangement
-    $vertexBufferCount = $bob.vertex_buffers.Count
-    $arrangement += [System.BitConverter]::GetBytes($vertexBufferCount)
-    foreach ($buffer in $bob.vertex_buffers) {
-        $vertexBufferName = $buffer.file_name
-        $vertexBufferSize = $buffer.byte_size
-    
-        $arrangement += [System.BitConverter]::GetBytes($vertexBufferSize)
-        $arrangement += (Get-Content -Path (Join-Path $FolderPath $vertexBufferName) -Encoding Byte -ReadCount 512)
-    }
-}
+$arrangements = @(
+    $metadataObj
+)
 
 # save meshes file
-$arrangement | Set-Content $OutputPath -Encoding Byte -Force
+$stream  = New-Object System.IO.FileStream($OutputPath, [IO.FileMode]::OpenOrCreate)
+$writer = New-Object System.IO.BinaryWriter($stream)
+
+$Writer.Write($arrangements.Count)
+foreach ($arrangement in $arrangements) {
+    Write-Arrangement $writer $arrangement
+}
+
+$writer.Close()
+$stream.Close()
