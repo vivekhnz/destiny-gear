@@ -98,7 +98,6 @@ class StreamElement(object):
         value = self.reader(f, self.is_normalized)
         
         if self.modifier is not None:
-            #TODO Normalize value
             self.modifier(vertex, value)
 
 def convert_to_tri_list(tri_strip):
