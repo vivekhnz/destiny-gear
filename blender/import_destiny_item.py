@@ -184,6 +184,7 @@ def create_mesh(verts, indices):
 def import_bit(f, all_indices, is_tri_list, vertices):
     start = read_int(f)
     end = read_int(f)
+    print('Bit (start = {}, end = {})'.format(start, end))
     indices = all_indices[start:end]
     if (not is_tri_list):
         indices = convert_to_tri_list(indices)
@@ -191,8 +192,13 @@ def import_bit(f, all_indices, is_tri_list, vertices):
     return create_mesh(vertices, indices)
 
 def import_bob(f):
+    bit_count = read_int(f)
+    if bit_count == 0:
+        return []
+
     # read bob header
-    is_tri_list = read_int(f) == 3
+    tri_int = read_int(f)
+    is_tri_list = tri_int == 3
     vertex_count = read_int(f)
 
     # read index buffer
@@ -216,7 +222,7 @@ def import_bob(f):
         )
 
     # read bits
-    return read_array(f, lambda f: import_bit(f, all_indices, is_tri_list, vertices))
+    return [import_bit(f, all_indices, is_tri_list, vertices) for i in range(bit_count)]
 
 def unpack_texture(texture_bytes, texture_name, folder_path):
     if not os.path.exists(folder_path):
@@ -295,7 +301,6 @@ def import_textures(f, folder_path):
 def import_arrangement(f):
     meshes = [mesh for bits in read_array(f, import_bob) for mesh in bits]
     arrangement_id = read_string(f)
-    print(arrangement_id)
     folder_path = os.path.join(bpy.path.abspath('//' + get_texture_folder()), arrangement_id)
     texture_set = import_textures(f, folder_path)
     create_material(texture_set, arrangement_id, meshes)

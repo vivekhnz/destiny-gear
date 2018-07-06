@@ -111,10 +111,15 @@ function Write-Bob {
     )
 
     $parts = Get-StageParts $Bob
+    $Writer.Write($parts.Count)
+    if (($parts.Count -eq 0)) {
+        return
+    }
+
     $vbCount = $Bob.vertex_buffers.Count
     $layoutCount = $Bob.stage_part_vertex_stream_layout_definitions.formats.Count
-    if (($parts.Count -eq 0) -or ($vbCount -eq 0)) {
-        return
+    if ($vbCount -eq 0) {
+        throw "Bob contains $($parts.Count) bits for the specified LOD but no vertex buffers were included."
     }
     if ($vbCount -gt $layoutCount) {
         throw "Bob contains $vbCount vertex buffers but only $layoutCount stream layouts were defined."
@@ -157,7 +162,6 @@ function Write-Bob {
     }
 
     # write bits
-    $Writer.Write($parts.Count)
     foreach ($part in $parts) {
         Write-Bit $Writer $part
     }
