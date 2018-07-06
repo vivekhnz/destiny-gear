@@ -1,5 +1,8 @@
 import bpy
 import bmesh
+import io
+import json
+import os.path
 import struct
 from enum import IntEnum
 from operator import itemgetter
@@ -27,6 +30,9 @@ def read_byte(f, n = 1):
     if n == 1:
         return array[0]
     return tuple(array)
+
+def read_string(f, n = 1):
+    return bytearray(f.read(n)).decode('utf-8')
 
 def read_array(f, read_func):
     count = read_int(f)
@@ -89,7 +95,7 @@ class StreamElement(object):
     def __init__(self, element_type, semantic, semantic_index, normalized):
         self.reader = STREAM_TYPE_READERS.get(element_type)
         if self.reader is None:
-            raise NotImplementedError("No reader defined for element type " + element_type)
+            raise NotImplementedError("No reader defined for element type " + str(element_type))
 
         self.modifier = STREAM_SEMANTIC_MODIFIERS.get((semantic, semantic_index))
         self.is_normalized = normalized
@@ -203,10 +209,83 @@ def import_bob(f):
     # read bits
     read_array(f, lambda f: import_bit(f, all_indices, is_tri_list, vertices))
 
+def unpack_texture(texture_bytes, texture_name, folder_path):
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+    with open(os.path.join(folder_path, texture_name), 'wb') as texture_file:
+        texture_file.write(texture_bytes)
+
+def create_material(folder_path, arrangement_id):
+    diffuse_path = os.path.join(bpy.path.abspath('//' + folder_path), 'diffuse.png')
+    normal_path = os.path.join(bpy.path.abspath('//' + folder_path), 'normal.png')
+    try:
+        diffuse_image = bpy.data.images.load(diffuse_path)
+    except:
+        raise NameError('Cannot load image %s' % diffuse_path)
+    try:
+        normal_image = bpy.data.images.load(normal_path)
+    except:
+        raise NameError('Cannot load image %s' % normal_path)
+    
+    diffuse_tex = bpy.data.textures.new('Diffuse', type = 'IMAGE')
+    diffuse_tex.image = diffuse_image
+
+    normal_tex = bpy.data.textures.new('Normal', type = 'IMAGE')
+    normal_tex.image = normal_image
+
+    mat = bpy.data.materials.new(arrangement_id)
+
+    diffuse_tex_slot = mat.texture_slots.add()
+    diffuse_tex_slot.texture = diffuse_tex
+    diffuse_tex_slot.texture_coords = 'UV'
+    diffuse_tex_slot.use_map_color_diffuse = True
+    diffuse_tex_slot.mapping = 'FLAT'
+
+    normal_tex_slot = mat.texture_slots.add()
+    normal_tex_slot.texture = normal_tex
+    normal_tex_slot.texture_coords = 'UV'
+    normal_tex_slot.use_map_color_diffuse = False
+    normal_tex_slot.use_map_normal = True
+    normal_tex_slot.normal_factor = 1.0
+    normal_tex_slot.mapping = 'FLAT'
+
+def get_texture_folder():
+    if not os.path.isfile(bpy.path.abspath('//destiny_item_settings.json')):
+        destiny_item_settings = {}
+        destiny_item_settings['texture_path'] = 'textures'
+        with open(bpy.path.abspath('//destiny_item_settings.json'), 'w') as settings_file:
+            json.dump(destiny_item_settings, settings_file)
+    with open(bpy.path.abspath('//destiny_item_settings.json'), 'r+') as settings_file:
+        destiny_item_settings = json.load(settings_file)
+        if not 'texture_path' in destiny_item_settings:
+            destiny_item_settings['texture_path'] = 'textures'
+            json.dump(destiny_item_settings, settings_file)
+        return destiny_item_settings['texture_path']
+
+def import_textures(f, folder_path, arrangement_id):
+    diffuse_byte_length = read_int(f)
+    diffuse_bytes = bytearray(f.read(diffuse_byte_length))
+    normal_byte_length = read_int(f)
+    normal_bytes = bytearray(f.read(normal_byte_length))
+    gearstack_byte_length = read_int(f)
+    gearstack_bytes = bytearray(f.read(gearstack_byte_length))
+    
+    unpack_texture(diffuse_bytes, "diffuse.png", folder_path)
+    unpack_texture(normal_bytes, "normal.png", folder_path)
+    unpack_texture(gearstack_bytes, "gearstack.png", folder_path)
+
 def import_arrangement(f):
     read_array(f, import_bob)
+    arrangement_id_length = read_int(f)
+    f.read(1)
+    arrangement_id = read_string(f, arrangement_id_length)
+    folder_path = os.path.join(bpy.path.abspath('//' + get_texture_folder()), arrangement_id)
+    import_textures(f, folder_path, arrangement_id)
+    create_material(folder_path, arrangement_id)
 
 def import_item(context, filepath):
+    if not bpy.data.is_saved:
+        raise FileNotFoundError("Blender file must be saved to disk.")
     f = open(filepath, 'rb')
     read_array(f, import_arrangement)
     f.close()

@@ -1,5 +1,6 @@
 Param (
     [Parameter(Mandatory = $true)] [string] $FolderPath,
+    [Parameter(Mandatory = $true)] [string] $TextureFolderPath,
     [Parameter(Mandatory = $true)] [string] $OutputPath,
     [Parameter(Mandatory = $false)] [string] $LodCategory = "0"
 )
@@ -162,6 +163,29 @@ function Write-Bob {
     }
 }
 
+function Write-TexturePlates {
+    Param (
+        [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer
+    )
+
+    $args = @(('"' + $FolderPath + '"'), ('"' + $TextureFolderPath + '"'))
+    Invoke-Expression ".\New-PlatedTexture.ps1 $args"
+
+    $diffusePath = Join-Path $FolderPath "diffuse.png"
+    $normalPath = Join-Path $FolderPath "normal.png"
+    $gearstackPath = Join-Path $FolderPath "gearstack.png"
+    $diffuseBytes = [System.IO.File]::ReadAllBytes($diffusePath)
+    $normalBytes = [System.IO.File]::ReadAllBytes($normalPath)
+    $gearstackBytes = [System.IO.File]::ReadAllBytes($gearstackPath)
+    
+    $Writer.Write($diffuseBytes.Count)
+    $Writer.Write($diffuseBytes)
+    $Writer.Write($normalBytes.Count)
+    $Writer.Write($normalBytes)
+    $Writer.Write($gearstackBytes.Count)
+    $Writer.Write($gearstackBytes)
+}
+
 function Write-Arrangement {
     Param (
         [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
@@ -173,6 +197,15 @@ function Write-Arrangement {
     foreach ($bob in $Arrangement.render_model.render_meshes) {
         Write-Bob $Writer $bob
     }
+
+    # write arrangement ID
+    $folderStructure = $FolderPath.Split([System.IO.Path]::DirectorySeparatorChar)
+    $arrangementId = $folderStructure[$folderStructure.Count - 1]
+    $Writer.Write($arrangementId.Length)
+    $Writer.Write($arrangementId)
+
+    # write textures
+    Write-TexturePlates $Writer
 }
 
 # verify input files are accessible
