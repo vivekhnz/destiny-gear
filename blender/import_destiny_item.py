@@ -31,13 +31,15 @@ def read_byte(f, n = 1):
         return array[0]
     return tuple(array)
 
-def read_string(f, n = 1):
-    return bytearray(f.read(n)).decode('utf-8')
+def read_string(f):
+    string_length = read_int(f)
+    # todo: investigate the extra byte
+    f.read(1)
+    return bytearray(f.read(string_length)).decode('utf-8')
 
 def read_array(f, read_func):
     count = read_int(f)
-    for i in range(count):
-        read_func(f)
+    return [read_func(f) for i in range(count)]
 
 def normalize(value, min_value, max_value):
     if (type(value) == tuple):
@@ -106,6 +108,11 @@ class StreamElement(object):
         if self.modifier is not None:
             self.modifier(vertex, value)
 
+class TextureSet(object):
+    def __init__(self):
+        self.diffuse = None
+        self.normal = None
+
 def convert_to_tri_list(tri_strip):
     tri_list = []
     for i in range(0, len(tri_strip) - 2):
@@ -172,6 +179,8 @@ def create_mesh(verts, indices):
     bpy.ops.mesh.delete_loose()
     bpy.ops.object.mode_set(mode='OBJECT')
 
+    return obj
+
 def import_bit(f, all_indices, is_tri_list, vertices):
     start = read_int(f)
     end = read_int(f)
@@ -179,7 +188,7 @@ def import_bit(f, all_indices, is_tri_list, vertices):
     if (not is_tri_list):
         indices = convert_to_tri_list(indices)
     
-    create_mesh(vertices, indices)
+    return create_mesh(vertices, indices)
 
 def import_bob(f):
     # read bob header
@@ -207,7 +216,7 @@ def import_bob(f):
         )
 
     # read bits
-    read_array(f, lambda f: import_bit(f, all_indices, is_tri_list, vertices))
+    return read_array(f, lambda f: import_bit(f, all_indices, is_tri_list, vertices))
 
 def unpack_texture(texture_bytes, texture_name, folder_path):
     if not os.path.exists(folder_path):
@@ -215,17 +224,15 @@ def unpack_texture(texture_bytes, texture_name, folder_path):
     with open(os.path.join(folder_path, texture_name), 'wb') as texture_file:
         texture_file.write(texture_bytes)
 
-def create_material(folder_path, arrangement_id):
-    diffuse_path = os.path.join(bpy.path.abspath('//' + folder_path), 'diffuse.png')
-    normal_path = os.path.join(bpy.path.abspath('//' + folder_path), 'normal.png')
+def create_material(texture_set, arrangement_id, meshes):
     try:
-        diffuse_image = bpy.data.images.load(diffuse_path)
+        diffuse_image = bpy.data.images.load(texture_set.diffuse)
     except:
-        raise NameError('Cannot load image %s' % diffuse_path)
+        raise NameError('Cannot load image %s' % texture_set.diffuse)
     try:
-        normal_image = bpy.data.images.load(normal_path)
+        normal_image = bpy.data.images.load(texture_set.normal)
     except:
-        raise NameError('Cannot load image %s' % normal_path)
+        raise NameError('Cannot load image %s' % texture_set.normal)
     
     diffuse_tex = bpy.data.textures.new('Diffuse', type = 'IMAGE')
     diffuse_tex.image = diffuse_image
@@ -249,12 +256,18 @@ def create_material(folder_path, arrangement_id):
     normal_tex_slot.normal_factor = 1.0
     normal_tex_slot.mapping = 'FLAT'
 
+    for mesh in meshes:
+        mesh.data.materials.append(mat)
+
 def get_texture_folder():
+    # save a default settings file if it doesn't exist
     if not os.path.isfile(bpy.path.abspath('//destiny_item_settings.json')):
         destiny_item_settings = {}
         destiny_item_settings['texture_path'] = 'textures'
         with open(bpy.path.abspath('//destiny_item_settings.json'), 'w') as settings_file:
             json.dump(destiny_item_settings, settings_file)
+
+    # read the texture folder path from the settings file
     with open(bpy.path.abspath('//destiny_item_settings.json'), 'r+') as settings_file:
         destiny_item_settings = json.load(settings_file)
         if not 'texture_path' in destiny_item_settings:
@@ -262,7 +275,7 @@ def get_texture_folder():
             json.dump(destiny_item_settings, settings_file)
         return destiny_item_settings['texture_path']
 
-def import_textures(f, folder_path, arrangement_id):
+def import_textures(f, folder_path):
     diffuse_byte_length = read_int(f)
     diffuse_bytes = bytearray(f.read(diffuse_byte_length))
     normal_byte_length = read_int(f)
@@ -274,14 +287,17 @@ def import_textures(f, folder_path, arrangement_id):
     unpack_texture(normal_bytes, "normal.png", folder_path)
     unpack_texture(gearstack_bytes, "gearstack.png", folder_path)
 
+    texture_set = TextureSet()
+    texture_set.diffuse = os.path.join(folder_path, "diffuse.png")
+    texture_set.normal = os.path.join(folder_path, "normal.png")
+    return texture_set
+
 def import_arrangement(f):
-    read_array(f, import_bob)
-    arrangement_id_length = read_int(f)
-    f.read(1)
-    arrangement_id = read_string(f, arrangement_id_length)
-    folder_path = os.path.join(bpy.path.abspath('//' + get_texture_folder()), arrangement_id)
-    import_textures(f, folder_path, arrangement_id)
-    create_material(folder_path, arrangement_id)
+    meshes = [mesh for bits in read_array(f, import_bob) for mesh in bits]
+    arrangement_id = read_string(f)
+    folder_path = os.path.join(bpy.path.abspath('//' + get_texture_folder()))
+    texture_set = import_textures(f, folder_path)
+    create_material(texture_set, arrangement_id, meshes)
 
 def import_item(context, filepath):
     if not bpy.data.is_saved:
