@@ -4,6 +4,8 @@ Param (
     [Parameter(Mandatory = $true)] [string] $OutputPath
 )
 
+Import-Module .\DestinyGear.psm1
+
 $RenderMetadata = Join-Path $FolderPath "render_metadata.js"
 $VertexStreamTypes = @{
     "_vertex_format_attribute_float2" = 0
@@ -163,25 +165,21 @@ function Write-Bob {
 
 function Write-TexturePlates {
     Param (
-        [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer
+        [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
+        [Parameter(Mandatory = $true)] $PlateSet
     )
-
-    $args = @(('"' + $FolderPath + '"'), ('"' + $TextureFolderPath + '"'))
-    Invoke-Expression ".\New-PlatedTexture.ps1 $args"
-
-    $diffusePath = Join-Path $FolderPath "diffuse.png"
-    $normalPath = Join-Path $FolderPath "normal.png"
-    $gearstackPath = Join-Path $FolderPath "gearstack.png"
-    $diffuseBytes = [System.IO.File]::ReadAllBytes($diffusePath)
-    $normalBytes = [System.IO.File]::ReadAllBytes($normalPath)
-    $gearstackBytes = [System.IO.File]::ReadAllBytes($gearstackPath)
     
-    $Writer.Write($diffuseBytes.Count)
-    $Writer.Write($diffuseBytes)
-    $Writer.Write($normalBytes.Count)
-    $Writer.Write($normalBytes)
-    $Writer.Write($gearstackBytes.Count)
-    $Writer.Write($gearstackBytes)
+    $diffuse = (New-TexturePlate -TextureFolderPath $TextureFolderPath -Plate $PlateSet.diffuse) -as [byte[]]
+    $Writer.Write($diffuse.Count)
+    $Writer.Write($diffuse)
+    
+    $normal = (New-TexturePlate -TextureFolderPath $TextureFolderPath -Plate $PlateSet.normal) -as [byte[]]
+    $Writer.Write($normal.Count)
+    $Writer.Write($normal)
+    
+    $gearstack = (New-TexturePlate -TextureFolderPath $TextureFolderPath -Plate $PlateSet.gearstack) -as [byte[]]
+    $Writer.Write($gearstack.Count)
+    $Writer.Write($gearstack)
 }
 
 function Write-Arrangement {
@@ -202,7 +200,7 @@ function Write-Arrangement {
     $Writer.Write($arrangementId.Trim())
 
     # write textures
-    Write-TexturePlates $Writer
+    Write-TexturePlates $Writer $Arrangement.texture_plates[0].plate_set
 }
 
 # verify input files are accessible
