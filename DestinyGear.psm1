@@ -1,3 +1,5 @@
+Add-Type -Assembly System.Drawing
+
 function New-TexturePlate {
     Param (
         [Parameter(Mandatory = $true)] $TextureFolderPath,
