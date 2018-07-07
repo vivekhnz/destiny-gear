@@ -205,8 +205,6 @@ function Write-Arrangement {
     # write arrangement ID
     $folderStructure = $FolderPath.Split([System.IO.Path]::DirectorySeparatorChar)
     $arrangementId = $folderStructure[$folderStructure.Count - 1]
-
-    $Writer.Write($arrangementId.Length)
     $Writer.Write($arrangementId.Trim())
 
     # write textures

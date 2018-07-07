@@ -32,9 +32,7 @@ def read_byte(f, n = 1):
     return tuple(array)
 
 def read_string(f):
-    string_length = read_int(f)
-    # todo: investigate the extra byte
-    f.read(1)
+    string_length = int.from_bytes(bytearray(f.read(1)), byteorder = 'little')
     return bytearray(f.read(string_length)).decode('utf-8')
 
 def read_array(f, read_func):
