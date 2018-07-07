@@ -7,6 +7,11 @@ import struct
 from enum import IntEnum
 from operator import itemgetter
 
+SETTINGS_PATH = bpy.path.abspath('//destiny_item_settings.json')
+DEFAULT_SETTINGS = {
+    'texture_path': 'textures'
+}
+
 def read(f, fmt, size, n):
     if n == 1:
         return struct.unpack(fmt, bytearray(f.read(size)))[0]
@@ -89,7 +94,7 @@ class Vertex(object):
         self.position = (xyzw[0], xyzw[1], xyzw[2])
     
     def set_uv(self, uv):
-        self.uv = uv
+        self.uv = (uv[0], 1 - uv[1])
 
 class StreamElement(object):
     def __init__(self, element_type, semantic, semantic_index, normalized):
@@ -110,6 +115,7 @@ class TextureSet(object):
     def __init__(self):
         self.diffuse = None
         self.normal = None
+        self.gearstack = None
 
 def convert_to_tri_list(tri_strip):
     tri_list = []
@@ -182,7 +188,6 @@ def create_mesh(verts, indices):
 def import_bit(f, all_indices, is_tri_list, vertices):
     start = read_int(f)
     end = read_int(f)
-    print('Bit (start = {}, end = {})'.format(start, end))
     indices = all_indices[start:end]
     if (not is_tri_list):
         indices = convert_to_tri_list(indices)
@@ -212,20 +217,11 @@ def import_bob(f):
 
     read_array(f, lambda f: fill_vertices(f, vertices))
 
-    # transform vertex UVs
-    for vertex in vertices:
-        vertex.uv = (
-            vertex.uv[0],
-            1 - vertex.uv[1]
-        )
-
     # read bits
     return [import_bit(f, all_indices, is_tri_list, vertices) for i in range(bit_count)]
 
-def unpack_texture(texture_bytes, texture_name, folder_path):
-    if not os.path.exists(folder_path):
-        os.makedirs(folder_path)
-    with open(os.path.join(folder_path, texture_name), 'wb') as texture_file:
+def save_texture_to_file(texture_bytes, texture_path):
+    with open(texture_path, 'wb') as texture_file:
         texture_file.write(texture_bytes)
 
 def create_material(texture_set, arrangement_id, meshes):
@@ -263,51 +259,67 @@ def create_material(texture_set, arrangement_id, meshes):
     for mesh in meshes:
         mesh.data.materials.append(mat)
 
-def get_texture_folder():
+def get_settings():
+    settings = None
+
     # save a default settings file if it doesn't exist
-    if not os.path.isfile(bpy.path.abspath('//destiny_item_settings.json')):
-        destiny_item_settings = {}
-        destiny_item_settings['texture_path'] = 'textures'
-        with open(bpy.path.abspath('//destiny_item_settings.json'), 'w') as settings_file:
-            json.dump(destiny_item_settings, settings_file)
+    if not os.path.isfile(SETTINGS_PATH):
+        settings = DEFAULT_SETTINGS.copy()
+        with open(SETTINGS_PATH, 'w') as settings_file:
+            json.dump(settings, settings_file)
 
-    # read the texture folder path from the settings file
-    with open(bpy.path.abspath('//destiny_item_settings.json'), 'r+') as settings_file:
-        destiny_item_settings = json.load(settings_file)
-        if not 'texture_path' in destiny_item_settings:
-            destiny_item_settings['texture_path'] = 'textures'
-            json.dump(destiny_item_settings, settings_file)
-        return destiny_item_settings['texture_path']
+    # read the settings file
+    if settings is None:
+        with open(SETTINGS_PATH, 'r') as settings_file:
+            settings = json.load(settings_file)
+        
+    # populate settings with default values if not specified
+    has_changed = False
+    for key, default_value in DEFAULT_SETTINGS.items():
+        if not key in settings:
+            settings[key] = default_value
+            has_changed = True
+    if has_changed:
+        with open(SETTINGS_PATH, 'w') as settings_file:
+            json.dump(settings, settings_file)
+        
+    return settings
 
-def import_textures(f, folder_path):
-    diffuse_byte_length = read_int(f)
-    diffuse_bytes = bytearray(f.read(diffuse_byte_length))
-    normal_byte_length = read_int(f)
-    normal_bytes = bytearray(f.read(normal_byte_length))
-    gearstack_byte_length = read_int(f)
-    gearstack_bytes = bytearray(f.read(gearstack_byte_length))
+def import_textures(f, folder_path):    
+    diffuse_bytes = bytearray(read_array(f, read_byte))
+    normal_bytes = bytearray(read_array(f, read_byte))
+    gearstack_bytes = bytearray(read_array(f, read_byte))
     
-    unpack_texture(diffuse_bytes, "diffuse.png", folder_path)
-    unpack_texture(normal_bytes, "normal.png", folder_path)
-    unpack_texture(gearstack_bytes, "gearstack.png", folder_path)
+    # create textures directory if it doesn't exist
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
 
     texture_set = TextureSet()
     texture_set.diffuse = os.path.join(folder_path, "diffuse.png")
     texture_set.normal = os.path.join(folder_path, "normal.png")
+    texture_set.gearstack = os.path.join(folder_path, "gearstack.png")
+    
+    save_texture_to_file(diffuse_bytes, texture_set.diffuse)
+    save_texture_to_file(normal_bytes, texture_set.normal)
+    save_texture_to_file(gearstack_bytes, texture_set.gearstack)
+
     return texture_set
 
-def import_arrangement(f):
+def import_arrangement(f, textures_path):
     meshes = [mesh for bits in read_array(f, import_bob) for mesh in bits]
     arrangement_id = read_string(f)
-    folder_path = os.path.join(bpy.path.abspath('//' + get_texture_folder()), arrangement_id)
+    folder_path = os.path.join(textures_path, arrangement_id)
     texture_set = import_textures(f, folder_path)
     create_material(texture_set, arrangement_id, meshes)
 
 def import_item(context, filepath):
     if not bpy.data.is_saved:
         raise FileNotFoundError("Blender file must be saved to disk.")
+    settings = get_settings()
+    textures_path = bpy.path.abspath('//' + settings['texture_path'])
+
     f = open(filepath, 'rb')
-    read_array(f, import_arrangement)
+    read_array(f, lambda f: import_arrangement(f, textures_path))
     f.close()
     return {'FINISHED'}
 
@@ -321,7 +333,7 @@ from bpy.types import Operator
 
 class ImportDestinyItem(Operator, ImportHelper):
     """This appears in the tooltip of the operator and in the generated docs"""
-    bl_idname = "import_data.destiny_item"  # important since its how bpy.ops.import_test.some_data is constructed
+    bl_idname = "import_data.destiny_item"  # important since its how bpy.ops.import_data.destiny_item is constructed
     bl_label = "Import Destiny Item"
 
     # ImportHelper mixin class uses this
