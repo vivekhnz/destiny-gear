@@ -1,8 +1,7 @@
 Param (
     [Parameter(Mandatory = $true)] [string] $FolderPath,
     [Parameter(Mandatory = $true)] [string] $TextureFolderPath,
-    [Parameter(Mandatory = $true)] [string] $OutputPath,
-    [Parameter(Mandatory = $false)] [string] $LodCategory = "0"
+    [Parameter(Mandatory = $true)] [string] $OutputPath
 )
 
 $RenderMetadata = Join-Path $FolderPath "render_metadata.js"
@@ -42,13 +41,8 @@ function Get-StageParts {
         $end = $Bob.stage_part_offsets[1]
         $parts = $Bob.stage_part_list[$start..$end]
     }
-    
-    $filtered = $parts | Where-Object { $_.lod_category.name.Contains($LodCategory) }
-    if ($filtered -isnot [Array]) {
-        return @()
-    }
 
-    return $filtered
+    return $parts | Where-Object { $_.lod_category.value -lt 4 }
 }
 
 function Write-IndexBuffer {
@@ -110,7 +104,7 @@ function Write-Bob {
         [Parameter(Mandatory = $true)] $Bob
     )
 
-    $parts = Get-StageParts $Bob
+    $parts = @(Get-StageParts $Bob)
     $Writer.Write($parts.Count)
     if (($parts.Count -eq 0)) {
         return
