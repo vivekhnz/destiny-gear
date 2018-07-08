@@ -100,7 +100,11 @@ class Vertex(object):
         self.uv = (uv[0], 1 - uv[1])
     
     def set_normal(self, xyzw):
-        self.normal = (xyzw[0], xyzw[1], xyzw[2])
+        self.normal = (
+            (xyzw[0] * 2) - 1,
+            (xyzw[1] * 2) - 1,
+            (xyzw[2] * 2) - 1
+        )
 
 class StreamElement(object):
     def __init__(self, element_type, semantic, semantic_index, normalized):
@@ -250,6 +254,7 @@ def create_material(texture_set, arrangement_id, meshes):
 
     normal_tex = bpy.data.textures.new('Normal', type = 'IMAGE')
     normal_tex.image = normal_image
+    normal_tex.use_normal_map = True
 
     mat = bpy.data.materials.new(arrangement_id)
 
