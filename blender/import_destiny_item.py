@@ -82,19 +82,25 @@ STREAM_SEMANTIC_MODIFIERS = {
     # POSITION
     (0, 0): (lambda vertex, value: vertex.set_position(value)),
     # TEXCOORD
-    (1, 0): (lambda vertex, value: vertex.set_uv(value))
+    (1, 0): (lambda vertex, value: vertex.set_uv(value)),
+    # NORMAL
+    (2, 0): (lambda vertex, value: vertex.set_normal(value))
 }
 
 class Vertex(object):
     def __init__(self):
         self.position = None
         self.uv = None
+        self.normal = None
     
     def set_position(self, xyzw):
         self.position = (xyzw[0], xyzw[1], xyzw[2])
     
     def set_uv(self, uv):
         self.uv = (uv[0], 1 - uv[1])
+    
+    def set_normal(self, xyzw):
+        self.normal = (xyzw[0], xyzw[1], xyzw[2])
 
 class StreamElement(object):
     def __init__(self, element_type, semantic, semantic_index, normalized):
@@ -170,9 +176,11 @@ def create_mesh(verts, indices):
     
     bm.verts.index_update()
     uv_layer = bm.loops.layers.uv.new()
+    normals = []
     for face in bm.faces:
         for loop in face.loops:
             loop[uv_layer].uv = verts[loop.vert.index].uv
+            normals.append(verts[loop.vert.index].normal)
 
     bm.to_mesh(mesh)
     bm.free()
@@ -182,6 +190,9 @@ def create_mesh(verts, indices):
         v.select = True
     bpy.ops.mesh.delete_loose()
     bpy.ops.object.mode_set(mode='OBJECT')
+
+    mesh.normals_split_custom_set(normals)
+    mesh.use_auto_smooth = True
 
     return obj
 
