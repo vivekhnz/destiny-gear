@@ -12,6 +12,16 @@ public class DestinyItemImporter : ScriptedImporter
     {
         public Vector3 Position;
         public Vector2 UV;
+
+        public void SetPosition(Vector4 xyzw)
+        {
+            Position = new Vector3(xyzw.x, xyzw.y, xyzw.z);
+        }
+
+        public void SetUV(short[] uv)
+        {
+            UV = new Vector2(uv[0], uv[1]);
+        }
     }
 
     private class StreamElement
@@ -26,6 +36,7 @@ public class DestinyItemImporter : ScriptedImporter
         }
 
         delegate object StreamTypeReader(BinaryReader reader);
+        delegate void VertexModifier(Vertex vertex, object value);
 
         private static Dictionary<StreamElementType, StreamTypeReader> StreamTypeReaders =
             new Dictionary<StreamElementType, StreamTypeReader>
@@ -37,7 +48,18 @@ public class DestinyItemImporter : ScriptedImporter
                 { StreamElementType.Ubyte4, r => r.ReadBytes(4) }
             };
 
+        private static Dictionary<string, VertexModifier> VertexModifiers =
+            new Dictionary<string, VertexModifier>
+            {
+                // POSITION
+                { "0-0", (vertex, value) => vertex.SetPosition((Vector4)value)},
+                // TEXCOORD
+                { "1-0", (vertex, value) => vertex.SetUV((short[])value)},
+            };
+
+
         private StreamTypeReader valueReader;
+        private VertexModifier vertexModifier;
         private bool isNormalized;
 
         public StreamElement(StreamElementType type, int semantic, int index, bool isNormalized)
@@ -47,16 +69,18 @@ public class DestinyItemImporter : ScriptedImporter
                 throw new NotImplementedException(
                     string.Format("No reader defined for element type '{0}'", type));
             }
+            VertexModifiers.TryGetValue(string.Format("{0}-{1}", semantic, index),
+                out vertexModifier);
             this.isNormalized = isNormalized;
         }
 
         public void ModifyVertex(BinaryReader reader, Vertex vertex)
         {
             var value = valueReader(reader);
-            // if (vertexModifier != null)
-            // {
-            //     vertexModifier(vertex, value);
-            // }
+            if (vertexModifier != null)
+            {
+                vertexModifier(vertex, value);
+            }
         }
     }
 
@@ -78,6 +102,12 @@ public class DestinyItemImporter : ScriptedImporter
                 foreach (var obj in objects)
                 {
                     obj.transform.SetParent(root.transform);
+
+                    var mesh = obj.GetComponent<MeshFilter>().sharedMesh;
+                    ctx.AddObjectToAsset(mesh.name, mesh);
+
+                    var material = obj.GetComponent<MeshRenderer>().sharedMaterial;
+                    ctx.AddObjectToAsset(material.name, material);
                 }
             }
         }
@@ -146,8 +176,57 @@ public class DestinyItemImporter : ScriptedImporter
     {
         int start = reader.ReadInt32();
         int end = reader.ReadInt32();
+        var indices = allIndices.Skip(start).Take(end - start).Select(s => (int)s).ToArray();
+        if (!isTriList)
+        {
+            indices = ConvertTriangleStripToTriangleList(indices);
+        }
 
-        return new GameObject(name);
+        return CreateMesh(name, vertices, indices);
+    }
+
+    private GameObject CreateMesh(string name, Vertex[] vertices, int[] indices)
+    {
+        var obj = new GameObject(name);
+
+        var mesh = new Mesh();
+        mesh.SetVertices(vertices.Select(v => v.Position).ToList());
+        mesh.SetTriangles(indices, 0);
+        mesh.RecalculateNormals();
+        mesh.name = string.Format("Mesh ({0})", name);
+
+        var material = new Material(Shader.Find("Standard"));
+        material.name = string.Format("Material ({0})", name);
+
+        obj.AddComponent<MeshFilter>().sharedMesh = mesh;
+        obj.AddComponent<MeshRenderer>().sharedMaterial = material;
+
+        return obj;
+    }
+
+    private int[] ConvertTriangleStripToTriangleList(int[] indices)
+    {
+        var triList = new List<int>();
+        for (int i = 0; i < indices.Count() - 2; i++)
+        {
+            var a = indices[i];
+            var b = indices[i + 1];
+            var c = indices[i + 2];
+            if (a == b || a == c || b == c) continue;
+            if (i % 2 == 0)
+            {
+                triList.Add(a);
+                triList.Add(b);
+                triList.Add(c);
+            }
+            else
+            {
+                triList.Add(a);
+                triList.Add(c);
+                triList.Add(b);
+            }
+        }
+        return triList.ToArray();
     }
 }
 
