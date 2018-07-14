@@ -1,8 +1,10 @@
 Param (
     [Parameter(Mandatory = $true)] [string] $FolderPath,
-    [Parameter(Mandatory = $true)] [string] $OutputPath,
-    [Parameter(Mandatory = $false)] [string] $LodCategory = "0"
+    [Parameter(Mandatory = $true)] [string] $TextureFolderPath,
+    [Parameter(Mandatory = $true)] [string] $OutputPath
 )
+
+Import-Module .\DestinyGear.psm1
 
 $RenderMetadata = Join-Path $FolderPath "render_metadata.js"
 $VertexStreamTypes = @{
@@ -41,13 +43,8 @@ function Get-StageParts {
         $end = $Bob.stage_part_offsets[1]
         $parts = $Bob.stage_part_list[$start..$end]
     }
-    
-    $filtered = $parts | Where-Object { $_.lod_category.name.Contains($LodCategory) }
-    if ($filtered -isnot [Array]) {
-        return @()
-    }
 
-    return $filtered
+    return $parts | Where-Object { $_.lod_category.value -lt 4 }
 }
 
 function Write-IndexBuffer {
@@ -108,12 +105,24 @@ function Write-Bob {
         [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
         [Parameter(Mandatory = $true)] $Bob
     )
+    
+    # write texture coordinate scale and offset
+    $texcoordInformation = $Bob.texcoord0_scale_offset
+    $Writer.Write($texcoordInformation[0] -as [float])
+    $Writer.Write($texcoordInformation[1] -as [float])
+    $Writer.Write($texcoordInformation[2] -as [float])
+    $Writer.Write($texcoordInformation[3] -as [float])
 
-    $parts = Get-StageParts $Bob
+    $parts = @(Get-StageParts $Bob)
+    $Writer.Write($parts.Count)
+    if (($parts.Count -eq 0)) {
+        return
+    }
+
     $vbCount = $Bob.vertex_buffers.Count
     $layoutCount = $Bob.stage_part_vertex_stream_layout_definitions.formats.Count
-    if (($parts.Count -eq 0) -or ($vbCount -eq 0)) {
-        return
+    if ($vbCount -eq 0) {
+        throw "Bob contains $($parts.Count) bits for the specified LOD but no vertex buffers were included."
     }
     if ($vbCount -gt $layoutCount) {
         throw "Bob contains $vbCount vertex buffers but only $layoutCount stream layouts were defined."
@@ -156,10 +165,28 @@ function Write-Bob {
     }
 
     # write bits
-    $Writer.Write($parts.Count)
     foreach ($part in $parts) {
         Write-Bit $Writer $part
     }
+}
+
+function Write-TexturePlates {
+    Param (
+        [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
+        [Parameter(Mandatory = $true)] $PlateSet
+    )
+    
+    $diffuse = (New-TexturePlate -TextureFolderPath $TextureFolderPath -Plate $PlateSet.diffuse) -as [byte[]]
+    $Writer.Write($diffuse.Count)
+    $Writer.Write($diffuse)
+    
+    $normal = (New-TexturePlate -TextureFolderPath $TextureFolderPath -Plate $PlateSet.normal) -as [byte[]]
+    $Writer.Write($normal.Count)
+    $Writer.Write($normal)
+    
+    $gearstack = (New-TexturePlate -TextureFolderPath $TextureFolderPath -Plate $PlateSet.gearstack) -as [byte[]]
+    $Writer.Write($gearstack.Count)
+    $Writer.Write($gearstack)
 }
 
 function Write-Arrangement {
@@ -173,6 +200,14 @@ function Write-Arrangement {
     foreach ($bob in $Arrangement.render_model.render_meshes) {
         Write-Bob $Writer $bob
     }
+
+    # write arrangement ID
+    $folderStructure = $FolderPath.Split([System.IO.Path]::DirectorySeparatorChar)
+    $arrangementId = $folderStructure[$folderStructure.Count - 1]
+    $Writer.Write($arrangementId.Trim())
+
+    # write textures
+    Write-TexturePlates $Writer $Arrangement.texture_plates[0].plate_set
 }
 
 # verify input files are accessible
