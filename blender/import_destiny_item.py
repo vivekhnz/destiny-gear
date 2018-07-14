@@ -82,19 +82,32 @@ STREAM_SEMANTIC_MODIFIERS = {
     # POSITION
     (0, 0): (lambda vertex, value: vertex.set_position(value)),
     # TEXCOORD
-    (1, 0): (lambda vertex, value: vertex.set_uv(value))
+    (1, 0): (lambda vertex, value: vertex.set_uv(value)),
+    # NORMAL
+    (2, 0): (lambda vertex, value: vertex.set_normal(value))
 }
 
 class Vertex(object):
     def __init__(self):
         self.position = None
         self.uv = None
+        self.normal = None
     
     def set_position(self, xyzw):
         self.position = (xyzw[0], xyzw[1], xyzw[2])
     
     def set_uv(self, uv):
-        self.uv = (uv[0], 1 - uv[1])
+        self.uv = (
+            (uv[0] * 2) - 1,
+            (uv[1] * 2) - 1
+        )
+    
+    def set_normal(self, xyzw):
+        self.normal = (
+            (xyzw[0] * 2) - 1,
+            (xyzw[1] * 2) - 1,
+            (xyzw[2] * 2) - 1
+        )
 
 class StreamElement(object):
     def __init__(self, element_type, semantic, semantic_index, normalized):
@@ -145,7 +158,7 @@ def fill_vertices(f, vertices):
     for vertex in vertices:
         fill_vertex(f, vertex, elements)
 
-def create_mesh(verts, indices):
+def create_mesh(verts, indices, texcoord_scale, texcoord_offset):
     mesh = bpy.data.meshes.new("MyMesh")
     obj = bpy.data.objects.new("MyObject", mesh)
 
@@ -170,9 +183,16 @@ def create_mesh(verts, indices):
     
     bm.verts.index_update()
     uv_layer = bm.loops.layers.uv.new()
+    normals = []
     for face in bm.faces:
         for loop in face.loops:
-            loop[uv_layer].uv = verts[loop.vert.index].uv
+            original_uv = verts[loop.vert.index].uv
+            uv = (
+                (original_uv[0] * texcoord_scale[0]) + texcoord_offset[0],
+                1 - ((original_uv[1] * texcoord_scale[1]) + texcoord_offset[1])
+            )
+            loop[uv_layer].uv = uv
+            normals.append(verts[loop.vert.index].normal)
 
     bm.to_mesh(mesh)
     bm.free()
@@ -183,18 +203,30 @@ def create_mesh(verts, indices):
     bpy.ops.mesh.delete_loose()
     bpy.ops.object.mode_set(mode='OBJECT')
 
+    mesh.normals_split_custom_set(normals)
+    mesh.use_auto_smooth = True
+
     return obj
 
-def import_bit(f, all_indices, is_tri_list, vertices):
+def import_bit(f, all_indices, is_tri_list, vertices, texcoord_scale, texcoord_offset):
     start = read_int(f)
     end = read_int(f)
     indices = all_indices[start:end]
     if (not is_tri_list):
         indices = convert_to_tri_list(indices)
     
-    return create_mesh(vertices, indices)
+    return create_mesh(vertices, indices, texcoord_scale, texcoord_offset)
 
 def import_bob(f):
+    # read texture coordinate scale and offset
+    texcoord_scale_x = read_float(f)
+    texcoord_scale_y = read_float(f)
+    texcoord_offset_x = read_float(f)
+    texcoord_offset_y = read_float(f)
+
+    texcoord_scale = (texcoord_scale_x, texcoord_scale_y)
+    texcoord_offset = (texcoord_offset_x, texcoord_offset_y)
+
     bit_count = read_int(f)
     if bit_count == 0:
         return []
@@ -218,7 +250,7 @@ def import_bob(f):
     read_array(f, lambda f: fill_vertices(f, vertices))
 
     # read bits
-    return [import_bit(f, all_indices, is_tri_list, vertices) for i in range(bit_count)]
+    return [import_bit(f, all_indices, is_tri_list, vertices, texcoord_scale, texcoord_offset) for i in range(bit_count)]
 
 def save_texture_to_file(texture_bytes, texture_path):
     with open(texture_path, 'wb') as texture_file:
@@ -239,6 +271,7 @@ def create_material(texture_set, arrangement_id, meshes):
 
     normal_tex = bpy.data.textures.new('Normal', type = 'IMAGE')
     normal_tex.image = normal_image
+    normal_tex.use_normal_map = True
 
     mat = bpy.data.materials.new(arrangement_id)
 
@@ -285,7 +318,7 @@ def get_settings():
         
     return settings
 
-def import_textures(f, folder_path):    
+def import_textures(f, folder_path, arrangement_id):    
     diffuse_bytes = bytearray(read_array(f, read_byte))
     normal_bytes = bytearray(read_array(f, read_byte))
     gearstack_bytes = bytearray(read_array(f, read_byte))
@@ -295,9 +328,9 @@ def import_textures(f, folder_path):
         os.makedirs(folder_path)
 
     texture_set = TextureSet()
-    texture_set.diffuse = os.path.join(folder_path, "diffuse.png")
-    texture_set.normal = os.path.join(folder_path, "normal.png")
-    texture_set.gearstack = os.path.join(folder_path, "gearstack.png")
+    texture_set.diffuse = os.path.join(folder_path, arrangement_id + "_diffuse.png")
+    texture_set.normal = os.path.join(folder_path, arrangement_id + "_normal.png")
+    texture_set.gearstack = os.path.join(folder_path, arrangement_id + "_gearstack.png")
     
     save_texture_to_file(diffuse_bytes, texture_set.diffuse)
     save_texture_to_file(normal_bytes, texture_set.normal)
@@ -309,7 +342,7 @@ def import_arrangement(f, textures_path):
     meshes = [mesh for bits in read_array(f, import_bob) for mesh in bits]
     arrangement_id = read_string(f)
     folder_path = os.path.join(textures_path, arrangement_id)
-    texture_set = import_textures(f, folder_path)
+    texture_set = import_textures(f, folder_path, arrangement_id)
     create_material(texture_set, arrangement_id, meshes)
 
 def import_item(context, filepath):

@@ -105,6 +105,13 @@ function Write-Bob {
         [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
         [Parameter(Mandatory = $true)] $Bob
     )
+    
+    # write texture coordinate scale and offset
+    $texcoordInformation = $Bob.texcoord0_scale_offset
+    $Writer.Write($texcoordInformation[0] -as [float])
+    $Writer.Write($texcoordInformation[1] -as [float])
+    $Writer.Write($texcoordInformation[2] -as [float])
+    $Writer.Write($texcoordInformation[3] -as [float])
 
     $parts = @(Get-StageParts $Bob)
     $Writer.Write($parts.Count)
