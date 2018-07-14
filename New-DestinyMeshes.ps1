@@ -207,7 +207,13 @@ function Write-Arrangement {
     $Writer.Write($arrangementId.Trim())
 
     # write textures
-    Write-TexturePlates $Writer $Arrangement.texture_plates[0].plate_set
+    if ($Arrangement.texture_plates.Count -eq 1) {
+        $Writer.Write(1)
+        Write-TexturePlates $Writer $Arrangement.texture_plates[0].plate_set
+    }
+    else {
+        $Writer.Write(0)
+    }
 }
 
 # verify input files are accessible
