@@ -29,9 +29,13 @@ public class DestinyItemArrangement
         arrangement.Id = reader.ReadString();
 
         // read textures
-        arrangement.DiffuseTexture = reader.ReadBytes(reader.ReadInt32());
-        arrangement.NormalTexture = reader.ReadBytes(reader.ReadInt32());
-        arrangement.GearstackTexture = reader.ReadBytes(reader.ReadInt32());
+        int plateSetCount = reader.ReadInt32();
+        if (plateSetCount > 0)
+        {
+            arrangement.DiffuseTexture = reader.ReadBytes(reader.ReadInt32());
+            arrangement.NormalTexture = reader.ReadBytes(reader.ReadInt32());
+            arrangement.GearstackTexture = reader.ReadBytes(reader.ReadInt32());
+        }
 
         return arrangement;
     }
