@@ -8,7 +8,7 @@ public class DestinyItemVertex
 
     public void SetPosition(Vector4 position)
     {
-        Position = new Vector3(position.x, position.y, position.z);
+        Position = new Vector3(position.x, position.z, position.y);
     }
 
     public void SetUV(Vector2 uv)
@@ -20,7 +20,7 @@ public class DestinyItemVertex
     {
         Normal = new Vector3(
             (normal.x * 2f) - 1f,
-            (normal.y * 2f) - 1f,
-            (normal.z * 2f) - 1f);
+            (normal.z * 2f) - 1f,
+            (normal.y * 2f) - 1f);
     }
 }
