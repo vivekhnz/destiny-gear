@@ -8,7 +8,7 @@ public class DestinyItemVertex
 
     public void SetPosition(Vector4 position)
     {
-        Position = new Vector3(position.x, position.z, position.y);
+        Position = new Vector3(position.x, position.y, position.z);
     }
 
     public void SetUV(Vector2 uv)

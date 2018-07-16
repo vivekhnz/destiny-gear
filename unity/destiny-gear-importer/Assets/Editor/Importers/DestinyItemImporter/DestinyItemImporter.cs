@@ -118,6 +118,7 @@ public class DestinyItemImporter : ScriptedImporter
     private GameObject CreateMesh(string name, DestinyItemVertex[] vertices, int[] indices)
     {
         var obj = new GameObject(name);
+        obj.transform.Rotate(-90.0f, 0.0f, 0.0f);
 
         var mesh = new Mesh();
         mesh.name = string.Format("Mesh ({0})", name);
