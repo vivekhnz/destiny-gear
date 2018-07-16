@@ -52,7 +52,14 @@ public class DestinyItemImporter : ScriptedImporter
                         indices = ConvertTriangleStripToTriangleList(indices);
                     }
 
-                    var obj = CreateMesh(name, bob.Vertices, indices);
+                    // remove loose vertices
+                    int minIndex = indices.Min();
+                    int maxIndex = indices.Max();
+                    var vertices = bob.Vertices.Skip(minIndex)
+                        .Take(maxIndex - minIndex + 1).ToArray();
+                    indices = indices.Select(i => i - minIndex).ToArray();
+
+                    var obj = CreateMesh(name, vertices, indices);
                     obj.transform.SetParent(root.transform);
 
                     var mesh = obj.GetComponent<MeshFilter>().sharedMesh;
