@@ -31,7 +31,7 @@ public class DestinyItemImporter : ScriptedImporter
             ctx.AddObjectToAsset(normalTexture.name, normalTexture);
             ctx.AddObjectToAsset(gearstackTexture.name, gearstackTexture);
 
-            var material = new Material(Shader.Find("Standard"));
+            var material = new Material(Shader.Find("Standard 2-Sided"));
             material.name = string.Format("{0}_Material", arrangement.Id);
             material.SetTexture("_MainTex", diffuseTexture);
             material.SetTexture("_BumpMap", normalTexture);
