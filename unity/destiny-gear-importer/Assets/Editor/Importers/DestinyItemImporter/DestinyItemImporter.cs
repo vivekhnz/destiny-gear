@@ -4,6 +4,7 @@ using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System;
+using UnityEngine.Rendering;
 
 [ScriptedImporter(1, "meshes")]
 public class DestinyItemImporter : ScriptedImporter
@@ -129,7 +130,9 @@ public class DestinyItemImporter : ScriptedImporter
         mesh.SetTriangles(indices, 0);
 
         obj.AddComponent<MeshFilter>().sharedMesh = mesh;
-        obj.AddComponent<MeshRenderer>();
+
+        var renderer = obj.AddComponent<MeshRenderer>();
+        renderer.shadowCastingMode = ShadowCastingMode.TwoSided;
 
         return obj;
     }
