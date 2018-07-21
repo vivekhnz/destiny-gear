@@ -189,6 +189,27 @@ function Write-TexturePlates {
     $Writer.Write($gearstack)
 }
 
+function Write-StaticTextures {
+    Param (
+        [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
+        [Parameter(Mandatory = $true)] $DiffuseTextureName,
+        [Parameter(Mandatory = $true)] $NormalTextureName,
+        [Parameter(Mandatory = $true)] $GearstackTextureName
+    )
+
+    $diffuse = (New-StaticTexture -TextureFolderPath $TextureFolderPath -TextureName $DiffuseTextureName) -as [byte[]]
+    $Writer.Write($diffuse.Count)
+    $Writer.Write($diffuse)
+    
+    $normal = (New-StaticTexture -TextureFolderPath $TextureFolderPath -TextureName $NormalTextureName) -as [byte[]]
+    $Writer.Write($normal.Count)
+    $Writer.Write($normal)
+    
+    $gearstack = (New-StaticTexture -TextureFolderPath $TextureFolderPath -TextureName $GearstackTextureName) -as [byte[]]
+    $Writer.Write($gearstack.Count)
+    $Writer.Write($gearstack)
+}
+
 function Write-Arrangement {
     Param (
         [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
@@ -212,7 +233,36 @@ function Write-Arrangement {
         Write-TexturePlates $Writer $Arrangement.texture_plates[0].plate_set
     }
     else {
-        $Writer.Write(0)
+        $hasStaticTextures = $false
+        if ($Arrangement.render_model.render_meshes.Count -gt 0) {
+            $renderMesh = $Arrangement.render_model.render_meshes[0]
+            $stagePartCount = $renderMesh.stage_part_list.Count
+            for ($i = 0; $i -lt $stagePartCount; $i++) {
+                $stagePart = $renderMesh.stage_part_list[$i]
+                $shader = $stagePart.shader
+                if (($shader -ne $null) -and ($shader.static_textures -ne $null)) {
+                    $staticTextures = $shader.static_textures
+                    if ($staticTextures.Count -ge 5) {
+                        $staticTextureIdDiffuse = $staticTextures[1]
+                        $staticTextureIdNormal = $staticTextures[3]
+                        $staticTextureIdGearstack = $staticTextures[2]
+                        
+                        if (($staticTextureIdDiffuse -ne $null) -and ($staticTextureIdNormal -ne $null) -and ($staticTextureIdGearstack -ne $null)) {
+                            $Writer.Write(1)
+                            Write-StaticTextures $Writer $staticTextureIdDiffuse $staticTextureIdNormal $staticTextureIdGearstack
+                            $hasStaticTextures = $true
+                            break
+                        }
+                    }
+                }
+            }
+            if (!($hasStaticTextures)) {
+                $Writer.Write(0)
+            }
+        }
+        else {
+            $Writer.Write(0)
+        }
     }
 }
 
