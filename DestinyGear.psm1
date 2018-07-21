@@ -30,24 +30,4 @@ function New-TexturePlate {
     return $buffer
 }
 
-function New-StaticTexture {
-    Param (
-        [Parameter(Mandatory = $true)] $TextureFolderPath,
-        [Parameter(Mandatory = $true)] $TextureName
-    )
-
-    # open static texture
-    $path = Join-Path $TextureFolderPath "$($TextureName).png"
-    $bitmap = [System.Drawing.Bitmap]::FromFile($path)
-
-    # save to buffer
-    $stream = [System.IO.MemoryStream]::new()
-    $bitmap.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)
-    $buffer = $stream.ToArray()
-    $stream.Close()
-
-    return $buffer
-}
-
 Export-ModuleMember -Function 'New-TexturePlate'
-Export-ModuleMember -Function 'New-StaticTexture'

@@ -189,6 +189,23 @@ function Write-TexturePlates {
     $Writer.Write($gearstack)
 }
 
+function Read-Texture {
+    Param (
+        [Parameter(Mandatory = $true)] [string] $Path
+    )
+
+    # open texture
+    $bitmap = [System.Drawing.Bitmap]::FromFile($Path)
+
+    # save to buffer
+    $stream = [System.IO.MemoryStream]::new()
+    $bitmap.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)
+    $buffer = $stream.ToArray()
+    $stream.Close()
+
+    return $buffer
+}
+
 function Write-StaticTextures {
     Param (
         [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
@@ -197,15 +214,15 @@ function Write-StaticTextures {
         [Parameter(Mandatory = $true)] $GearstackTextureName
     )
 
-    $diffuse = (New-StaticTexture -TextureFolderPath $TextureFolderPath -TextureName $DiffuseTextureName) -as [byte[]]
+    $diffuse = (Read-Texture (Join-Path $TextureFolderPath "$($DiffuseTextureName).png")) -as [byte[]]
     $Writer.Write($diffuse.Count)
     $Writer.Write($diffuse)
     
-    $normal = (New-StaticTexture -TextureFolderPath $TextureFolderPath -TextureName $NormalTextureName) -as [byte[]]
+    $normal = (Read-Texture (Join-Path $TextureFolderPath "$($NormalTextureName).png")) -as [byte[]]
     $Writer.Write($normal.Count)
     $Writer.Write($normal)
     
-    $gearstack = (New-StaticTexture -TextureFolderPath $TextureFolderPath -TextureName $GearstackTextureName) -as [byte[]]
+    $gearstack = (Read-Texture (Join-Path $TextureFolderPath "$($GearstackTextureName).png")) -as [byte[]]
     $Writer.Write($gearstack.Count)
     $Writer.Write($gearstack)
 }
