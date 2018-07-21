@@ -170,25 +170,6 @@ function Write-Bob {
     }
 }
 
-function Write-TexturePlates {
-    Param (
-        [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
-        [Parameter(Mandatory = $true)] $PlateSet
-    )
-    
-    $diffuse = (New-TexturePlate -TextureFolderPath $TextureFolderPath -Plate $PlateSet.diffuse) -as [byte[]]
-    $Writer.Write($diffuse.Count)
-    $Writer.Write($diffuse)
-    
-    $normal = (New-TexturePlate -TextureFolderPath $TextureFolderPath -Plate $PlateSet.normal) -as [byte[]]
-    $Writer.Write($normal.Count)
-    $Writer.Write($normal)
-    
-    $gearstack = (New-TexturePlate -TextureFolderPath $TextureFolderPath -Plate $PlateSet.gearstack) -as [byte[]]
-    $Writer.Write($gearstack.Count)
-    $Writer.Write($gearstack)
-}
-
 function Read-Texture {
     Param (
         [Parameter(Mandatory = $true)] [string] $Path
@@ -206,6 +187,19 @@ function Read-Texture {
     return $buffer
 }
 
+function Write-TexturePlates {
+    Param (
+        [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
+        [Parameter(Mandatory = $true)] $PlateSet
+    )
+    
+    $diffuse = (New-TexturePlate -TextureFolderPath $TextureFolderPath -Plate $PlateSet.diffuse) -as [byte[]]
+    $normal = (New-TexturePlate -TextureFolderPath $TextureFolderPath -Plate $PlateSet.normal) -as [byte[]]
+    $gearstack = (New-TexturePlate -TextureFolderPath $TextureFolderPath -Plate $PlateSet.gearstack) -as [byte[]]
+
+    Write-Textures $Writer $diffuse $normal $gearstack
+}
+
 function Write-StaticTextures {
     Param (
         [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
@@ -215,16 +209,28 @@ function Write-StaticTextures {
     )
 
     $diffuse = (Read-Texture (Join-Path $TextureFolderPath "$($DiffuseTextureName).png")) -as [byte[]]
-    $Writer.Write($diffuse.Count)
-    $Writer.Write($diffuse)
-    
-    $normal = (Read-Texture (Join-Path $TextureFolderPath "$($NormalTextureName).png")) -as [byte[]]
-    $Writer.Write($normal.Count)
-    $Writer.Write($normal)
-    
+    $normal = (Read-Texture (Join-Path $TextureFolderPath "$($NormalTextureName).png")) -as [byte[]]    
     $gearstack = (Read-Texture (Join-Path $TextureFolderPath "$($GearstackTextureName).png")) -as [byte[]]
-    $Writer.Write($gearstack.Count)
-    $Writer.Write($gearstack)
+
+    Write-Textures $Writer $diffuse $normal $gearstack
+}
+
+function Write-Textures {
+    Param (
+        [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
+        [Parameter(Mandatory = $true)] [byte[]] $DiffuseTexture,
+        [Parameter(Mandatory = $true)] [byte[]] $NormalTexture,
+        [Parameter(Mandatory = $true)] [byte[]] $GearstackTexture
+    )
+
+    $Writer.Write($DiffuseTexture.Count)
+    $Writer.Write($DiffuseTexture)
+    
+    $Writer.Write($NormalTexture.Count)
+    $Writer.Write($NormalTexture)
+    
+    $Writer.Write($GearstackTexture.Count)
+    $Writer.Write($GearstackTexture)
 }
 
 function Write-Arrangement {
