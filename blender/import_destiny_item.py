@@ -338,12 +338,19 @@ def import_textures(f, folder_path, arrangement_id):
 
     return texture_set
 
+def rename_meshes(meshes, arrangement_id):
+    for mesh in meshes:
+        mesh.name = arrangement_id
+
 def import_arrangement(f, textures_path):
     meshes = [mesh for bits in read_array(f, import_bob) for mesh in bits]
     arrangement_id = read_string(f)
-    folder_path = os.path.join(textures_path, arrangement_id)
-    texture_set = import_textures(f, folder_path, arrangement_id)
-    create_material(texture_set, arrangement_id, meshes)
+    has_texture_plates = read_int(f)
+    if has_texture_plates == 1:
+        folder_path = os.path.join(textures_path, arrangement_id)
+        texture_set = import_textures(f, folder_path, arrangement_id)
+        create_material(texture_set, arrangement_id, meshes)
+    rename_meshes(meshes, arrangement_id)
 
 def import_item(context, filepath):
     if not bpy.data.is_saved:
