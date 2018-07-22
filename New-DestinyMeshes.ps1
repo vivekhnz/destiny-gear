@@ -6,6 +6,12 @@ Param (
 
 Import-Module .\DestinyGear.psm1
 
+class TextureSet {
+    [byte[]] $Diffuse
+    [byte[]] $Normal
+    [byte[]] $Gearstack
+}
+
 $RenderMetadata = Join-Path $FolderPath "render_metadata.js"
 $VertexStreamTypes = @{
     "_vertex_format_attribute_float2" = 0
@@ -187,50 +193,56 @@ function Read-Texture {
     return $buffer
 }
 
-function Write-TexturePlates {
-    Param (
-        [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
-        [Parameter(Mandatory = $true)] $PlateSet
-    )
-    
-    $diffuse = (New-TexturePlate -TextureFolderPath $TextureFolderPath -Plate $PlateSet.diffuse) -as [byte[]]
-    $normal = (New-TexturePlate -TextureFolderPath $TextureFolderPath -Plate $PlateSet.normal) -as [byte[]]
-    $gearstack = (New-TexturePlate -TextureFolderPath $TextureFolderPath -Plate $PlateSet.gearstack) -as [byte[]]
-
-    Write-Textures $Writer $diffuse $normal $gearstack
-}
-
-function Write-StaticTextures {
-    Param (
-        [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
-        [Parameter(Mandatory = $true)] $DiffuseTextureName,
-        [Parameter(Mandatory = $true)] $NormalTextureName,
-        [Parameter(Mandatory = $true)] $GearstackTextureName
-    )
-
-    $diffuse = (Read-Texture (Join-Path $TextureFolderPath "$($DiffuseTextureName).png")) -as [byte[]]
-    $normal = (Read-Texture (Join-Path $TextureFolderPath "$($NormalTextureName).png")) -as [byte[]]    
-    $gearstack = (Read-Texture (Join-Path $TextureFolderPath "$($GearstackTextureName).png")) -as [byte[]]
-
-    Write-Textures $Writer $diffuse $normal $gearstack
-}
-
 function Write-Textures {
     Param (
         [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
-        [Parameter(Mandatory = $true)] [byte[]] $DiffuseTexture,
-        [Parameter(Mandatory = $true)] [byte[]] $NormalTexture,
-        [Parameter(Mandatory = $true)] [byte[]] $GearstackTexture
+        [Parameter(Mandatory = $true)] [TextureSet] $Textures
     )
 
-    $Writer.Write($DiffuseTexture.Count)
-    $Writer.Write($DiffuseTexture)
-    
-    $Writer.Write($NormalTexture.Count)
-    $Writer.Write($NormalTexture)
-    
-    $Writer.Write($GearstackTexture.Count)
-    $Writer.Write($GearstackTexture)
+    $Writer.Write($Textures.Diffuse.Count)
+    $Writer.Write($Textures.Diffuse)
+
+    $Writer.Write($Textures.Normal.Count)
+    $Writer.Write($Textures.Normal)
+
+    $Writer.Write($Textures.Gearstack.Count)
+    $Writer.Write($Textures.Gearstack)
+}
+
+function Get-StaticTextures {
+    Param (
+        [Parameter(Mandatory = $true)] $Arrangement
+    )
+
+    if ($Arrangement.render_model.render_meshes.Count -lt 1) {
+        return $null
+    }
+    $renderMesh = $Arrangement.render_model.render_meshes[0]
+    $stagePartCount = $renderMesh.stage_part_list.Count
+    for ($i = 0; $i -lt $stagePartCount; $i++) {
+        $stagePart = $renderMesh.stage_part_list[$i]
+        if (($null -eq $stagePart.shader) -or ($null -eq $stagePart.shader.static_textures)) {
+            continue
+        }
+
+        $staticTextures = $stagePart.shader.static_textures
+        if ($staticTextures.Count -lt 5) {
+            continue
+        }
+
+        $diffuse = $staticTextures[1]
+        $normal = $staticTextures[3]
+        $gearstack = $staticTextures[2]
+        if (($null -eq $diffuse) -or ($null -eq $normal) -or ($null -eq $gearstack)) {
+            continue
+        }
+
+        $textures = New-Object TextureSet
+        $textures.Diffuse = (Read-Texture (Join-Path $TextureFolderPath "$($diffuse).png")) -as [byte[]]
+        $textures.Normal = (Read-Texture (Join-Path $TextureFolderPath "$($normal).png")) -as [byte[]]
+        $textures.Gearstack = (Read-Texture (Join-Path $TextureFolderPath "$($gearstack).png")) -as [byte[]]
+        return $textures
+    }
 }
 
 function Write-Arrangement {
@@ -251,41 +263,23 @@ function Write-Arrangement {
     $Writer.Write($arrangementId.Trim())
 
     # write textures
+    [TextureSet] $textures = $null
     if ($Arrangement.texture_plates.Count -eq 1) {
-        $Writer.Write(1)
-        Write-TexturePlates $Writer $Arrangement.texture_plates[0].plate_set
+        $plateSet = $Arrangement.texture_plates[0].plate_set
+        $textures = New-Object TextureSet
+        $textures.Diffuse = (New-TexturePlate -TextureFolderPath $TextureFolderPath -Plate $plateSet.diffuse) -as [byte[]]
+        $textures.Normal = (New-TexturePlate -TextureFolderPath $TextureFolderPath -Plate $plateSet.normal) -as [byte[]]
+        $textures.Gearstack = (New-TexturePlate -TextureFolderPath $TextureFolderPath -Plate $plateSet.gearstack) -as [byte[]]
     }
     else {
-        $hasStaticTextures = $false
-        if ($Arrangement.render_model.render_meshes.Count -gt 0) {
-            $renderMesh = $Arrangement.render_model.render_meshes[0]
-            $stagePartCount = $renderMesh.stage_part_list.Count
-            for ($i = 0; $i -lt $stagePartCount; $i++) {
-                $stagePart = $renderMesh.stage_part_list[$i]
-                $shader = $stagePart.shader
-                if (($shader -ne $null) -and ($shader.static_textures -ne $null)) {
-                    $staticTextures = $shader.static_textures
-                    if ($staticTextures.Count -ge 5) {
-                        $staticTextureIdDiffuse = $staticTextures[1]
-                        $staticTextureIdNormal = $staticTextures[3]
-                        $staticTextureIdGearstack = $staticTextures[2]
-                        
-                        if (($staticTextureIdDiffuse -ne $null) -and ($staticTextureIdNormal -ne $null) -and ($staticTextureIdGearstack -ne $null)) {
-                            $Writer.Write(1)
-                            Write-StaticTextures $Writer $staticTextureIdDiffuse $staticTextureIdNormal $staticTextureIdGearstack
-                            $hasStaticTextures = $true
-                            break
-                        }
-                    }
-                }
-            }
-            if (!($hasStaticTextures)) {
-                $Writer.Write(0)
-            }
-        }
-        else {
-            $Writer.Write(0)
-        }
+        $textures = Get-StaticTextures $Arrangement
+    }
+    if ($null -eq $textures) {
+        $Writer.Write(0)
+    }
+    else {
+        $Writer.Write(1)
+        Write-Textures $Writer $textures
     }
 }
 
