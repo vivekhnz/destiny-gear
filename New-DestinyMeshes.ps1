@@ -58,10 +58,10 @@ function Write-IndexBuffer {
         [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
         [Parameter(Mandatory = $true)] $IndexBuffer
     )
-    
+
     $path = Join-Path $FolderPath $IndexBuffer.file_name
     $data = [System.IO.File]::ReadAllBytes($path)
-    
+
     $Writer.Write($IndexBuffer.byte_size / $IndexBuffer.value_byte_size)
     $Writer.Write($data -as [Byte[]])
 }
@@ -72,19 +72,19 @@ function Write-VertexBuffer {
         [Parameter(Mandatory = $true)] $VertexBuffer,
         [Parameter(Mandatory = $true)] $Elements
     )
-    
+
     $path = Join-Path $FolderPath $VertexBuffer.file_name
     $data = [System.IO.File]::ReadAllBytes($path)
-    
+
     $Writer.Write($Elements.Count)
     foreach ($element in $Elements) {
         $type = $VertexStreamTypes[$element.type]
-        if ($type -eq $null) {
+        if ($null -eq $type) {
             throw "Unknown stream element type '$($element.type)'."
         }
-        
+
         $semantic = $VertexStreamSemantics[$element.semantic]
-        if ($semantic -eq $null) {
+        if ($null -eq $semantic) {
             throw "Unknown stream element semantic '$($element.semantic)'."
         }
 
@@ -111,7 +111,7 @@ function Write-Bob {
         [Parameter(Mandatory = $true)] [System.IO.BinaryWriter] $Writer,
         [Parameter(Mandatory = $true)] $Bob
     )
-    
+
     # write texture coordinate scale and offset
     $texcoordInformation = $Bob.texcoord0_scale_offset
     $Writer.Write($texcoordInformation[0] -as [float])
@@ -161,7 +161,7 @@ function Write-Bob {
 
     # write index buffer
     Write-IndexBuffer $Writer $Bob.index_buffer
-    
+
     # write vertex buffers
     $Writer.Write($vbCount)
     for ($i = 0; $i -lt $vbCount; $i++) {
